@@ -22,21 +22,33 @@ export function installPhone(ui) {
   const isPhone = () => body.classList.contains('phone');
 
   // ---- device detection --------------------------------------------------------------
+  // layout choice: 'auto' (detect), 'phone' or 'desktop', set with the 📱 button or in Settings.
+  // In-app browsers (Messenger etc.) report touch and sizes unreliably, so auto checks several signals.
+  const getLayout = () => { try { return localStorage.getItem('cd.layout') || 'auto'; } catch { return 'auto'; } };
   const detect = () => {
-    const coarse = window.matchMedia('(pointer: coarse)').matches || /[?&]phone=1/.test(location.search);   // ?phone=1 forces it (testing)
-    const small = Math.min(window.innerWidth, window.innerHeight) <= 560;
+    const forced = /[?&]phone=1/.test(location.search) ? 'phone' : getLayout();   // ?phone=1 forces it (testing)
+    const touch = window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(any-pointer: coarse)').matches
+      || navigator.maxTouchPoints > 0 || 'ontouchstart' in window;
+    const small = Math.min(window.innerWidth, window.innerHeight) <= 600 || Math.min(screen.width, screen.height) <= 600;
+    const on = forced === 'phone' || (forced === 'auto' && touch && small);
     const was = isPhone();
-    body.classList.toggle('phone', coarse && small);
-    body.classList.toggle('portrait', coarse && small && window.innerHeight > window.innerWidth);
-    if (was !== isPhone()) { closeRing(); r.resize(); }
+    body.classList.toggle('phone', on);
+    body.classList.toggle('portrait', on && window.innerHeight > window.innerWidth);
+    body.classList.toggle('can-phone', touch || window.innerWidth <= 860 || forced !== 'auto');   // show the 📱 button
+    const b = document.getElementById('btn-layout');
+    if (b) { b.textContent = on ? '🖥' : '📱'; b.title = on ? 'Switch to the desktop layout' : 'Switch to the phone layout'; }
+    if (was !== isPhone()) { closeRing(); setMode(null); r.resize(); }
   };
+  ui.setLayout = v => { try { localStorage.setItem('cd.layout', v); } catch { /* ignore */ } detect(); r.resize(); };
+  ui.getLayout = getLayout;
 
   // ---- "turn your phone" hint -----------------------------------------------------------
   const rot = document.createElement('div');
   rot.id = 'rotate-hint';
-  rot.innerHTML = `<div class="rot-ic">📱↻</div><b>Turn your phone sideways</b><span>The board fits much better in landscape.</span><button class="ghost" id="rot-skip">Play upright anyway</button>`;
+  rot.innerHTML = `<div class="rot-ic">📱↻</div><b>Turn your phone sideways</b><span>The board fits much better in landscape.</span><button class="ghost" id="rot-skip">Play upright anyway</button><button class="link" id="rot-desktop">Use the desktop layout</button>`;
   document.body.appendChild(rot);
   $('#rot-skip').addEventListener('click', () => { body.classList.add('upright'); r.resize(); });
+  $('#rot-desktop').addEventListener('click', () => ui.setLayout('desktop'));
 
   // ---- ring menu ------------------------------------------------------------------------
   const stage = $('#stage');

@@ -432,3 +432,11 @@ body.phone.portrait #hud { flex-wrap: wrap; row-gap: 4px; }
 body.phone.portrait #st-power { margin-right: 0; }
 body.phone.portrait #hud .speed { order: 3; }
 body.phone.portrait #btn-player { margin-left: auto; }
+/* lesson card close button: a clear, big button on phones (an arrow on the narrow-window sheet) */
+.sheet-toggle .st-close { display: none; }
+body.phone #side .sheet-toggle { width: auto; height: auto; padding: 8px 14px; border-radius: 10px; background: #12352a; border: 1px solid var(--accent); color: var(--text); font-weight: 800; font-size: 14px; }
+body.phone #side .sheet-toggle .st-arrow { display: none; }
+body.phone #side .sheet-toggle .st-close { display: inline; }
+/* manual layout switch (📱 phone / 🖥 desktop): only where it can matter */
+#btn-layout { display: none; }
+body.can-phone #btn-layout { display: grid; }

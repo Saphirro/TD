@@ -263,7 +263,7 @@ export const LESSONS = [
       <pre>if len(enemies) > 3:
     print("Big group!")</pre>
       <p>Here the condition is <code>len(enemies) > 3</code> and the action is the <code>print</code> line. You already have another one in your code: <code>if len(enemies) == 0:</code> with <code>return</code> under it.</p>
-      <p>For your cannon, the <b>motor</b> module can tell you if the barrel points at the target: <code>motor.aimed(target)</code> gives back <code>True</code> or <code>False</code>. Look up <b>motor</b> in the Module reference below.</p>`,
+      <p>For your cannon, the <b>motor</b> module can tell you if the barrel points at the target: <code>motor.aimed(target)</code> gives back <code>True</code> or <code>False</code>. To see everything <b>motor</b> can do, open the code editor and look at its <b>Docs</b> tab.</p>`,
     tasks: [
       {
         text: 'Make a cannon fire <b>only when</b> <code>motor.aimed(target)</code> is True. Press <b>Upload</b>. Each cannon has its own copy of the code, so do it on every cannon.',

@@ -281,6 +281,7 @@ export class UI {
     $('#btn-settings').addEventListener('click', () => this.settingsModal());
     $('#btn-maps').addEventListener('click', () => this.campaignModal());
     $('#btn-player').addEventListener('click', () => this.playersModal());
+    $('#btn-layout').addEventListener('click', () => this.setLayout?.(document.body.classList.contains('phone') ? 'desktop' : 'phone'));
     const mute = $('#btn-mute');
     const showMute = () => { mute.textContent = this.audio.muted ? '🔇' : '🔊'; mute.title = this.audio.muted ? 'Sound off (M)' : 'Sound on (M)'; };
     showMute();
@@ -810,7 +811,6 @@ export class UI {
       const d = ENEMIES[k];
       return `<div class="enemy-chip" title="${esc(d.desc)}"><span class="dot" style="background:${d.color}"></span><b>${n}×</b> ${d.name}<small>${Math.round(d.boss ? d.hp : d.hp * M.hpBase * (1 + M.hpGrowth * wi))} hp${d.armor ? ` · armor ${d.armor}` : ''}${d.shield ? ` · shield ${d.shield}` : ''} · ${d.desc}</small></div>`;
     }).join('');
-    $('#guide-docs').innerHTML = ['basics', 'radar', 'motor', 'cannon', 'pulse', 'laser', 'power', 'meter'].map(k => `<details><summary>${k === 'basics' ? 'How programs run' : k}</summary>${DOCS[k]}</details>`).join('');
     this.checkLesson();
   }
 
@@ -913,6 +913,8 @@ export class UI {
     this.modal(`<h2>Settings</h2>
       <label class="opt"><input type="radio" name="mode" value="plan" ${live ? '' : 'checked'}><div><b>Plan mode</b><small>The game pauses when you open the code editor. Press ▶ (or a speed button) to keep it running while you edit. Best for learning.</small></div></label>
       <label class="opt"><input type="radio" name="mode" value="live" ${live ? 'checked' : ''}><div><b>Live mode</b><small>The game keeps running while you code. Hot-fix turrets mid-wave!</small></div></label>
+      <label class="opt"><div><b>Screen layout</b><small>Auto picks the phone layout on small touch screens. If your browser guesses wrong, choose one here (also the 📱 / 🖥 button).</small>
+        <select id="set-layout">${['auto', 'phone', 'desktop'].map(v => `<option value="${v}" ${(this.getLayout?.() || 'auto') === v ? 'selected' : ''}>${{ auto: 'Auto', phone: 'Phone (landscape, tap menus)', desktop: 'Desktop' }[v]}</option>`).join('')}</select></div></label>
       <label class="opt"><input type="checkbox" id="set-pathflow" ${this.showPathFlow ? 'checked' : ''}><div><b>Enemy path indicator</b><small>Moving dots along the enemy path and the glow where enemies enter. Shortcut: V.</small></div></label>
       <p class="muted">Python ${this.py.version || '(loading)'} running in your browser via Pyodide.</p>`,
       [{ label: 'Restart game', cls: 'danger', fn: () => this.restart() }, {
@@ -920,6 +922,8 @@ export class UI {
           const v = document.querySelector('input[name="mode"]:checked')?.value;
           this.planMode = v !== 'live';
           this.setPathFlow(!!document.querySelector('#set-pathflow')?.checked);
+          const lay = document.querySelector('#set-layout')?.value;
+          if (lay && lay !== this.getLayout?.()) this.setLayout?.(lay);
           try { localStorage.setItem('cd.mode', this.planMode ? 'plan' : 'live'); } catch { /* ignore */ }
         },
       }]);

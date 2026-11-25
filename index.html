@@ -33,6 +33,7 @@
       <button data-speed="3">3×</button>
     </div>
     <button id="btn-wave" class="primary">Start wave ▶</button>
+    <button id="btn-layout" class="icon" title="Switch layout">📱</button>
     <button id="btn-player" class="icon" title="Players">👤</button>
     <button id="btn-maps" class="icon" title="Campaign / maps">🗺</button>
     <button id="btn-guide" class="icon" title="Lessons">📘</button>
@@ -87,7 +88,7 @@
       <section id="guide" class="pane">
         <div class="pane-head">
           <div><span class="kicker">Lesson <b id="lesson-num">1</b></span><h2 id="lesson-title"></h2></div>
-          <button class="icon mobile-only sheet-toggle" title="Show more / less">▴</button>
+          <button class="icon mobile-only sheet-toggle" title="Show more / less"><span class="st-arrow">▴</span><span class="st-close">✕ Close</span></button>
         </div>
         <div class="pane-body">
           <div id="guide-tip" class="tipbox" hidden></div>
@@ -101,8 +102,6 @@
           <div id="lesson-sol" class="hintbox" hidden></div>
           <h4>Next: <span id="wave-title"></span></h4>
           <div id="wave-preview"></div>
-          <h4>Module reference</h4>
-          <div id="guide-docs" class="docs"></div>
         </div>
       </section>
     </aside>
