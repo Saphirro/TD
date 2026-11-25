@@ -197,6 +197,8 @@ export class UI {
     });
     game.on('toast', (m, k) => this.toast(m, k));
     game.on('waveEnd', () => { this.renderGuide(); this.flashGuide(); this.autosave(); this.sfx('clear'); });
+    game.on('beforeWave', () => { this.waveSnap = { ...this.g.serialize(), lessonDone: [...this.lessonDone] }; });
+    game.on('map', () => { this.waveSnap = null; });   // a new or restarted map has nothing to replay
     game.on('lost', () => { this.sfx('lost'); this.clearSave(); this.endModal(false); });
     game.on('won', () => { this.sfx('won'); this.recordWin(); this.clearSave(); this.endModal(true); });
     game.on('map', () => { this.closeEditor(); this.select(null); this.lessonDone.clear(); this.setTool('select'); this.renderGuide(); });
@@ -300,6 +302,7 @@ export class UI {
     $('#lesson-go').addEventListener('click', e => { e.stopPropagation(); this.el.side.classList.remove('open'); setTimeout(() => this.r.resize(), 220); });
     $('#btn-player').addEventListener('click', () => this.playersModal());
     $('#btn-lib').addEventListener('click', () => this.openEditor('lib'));
+    $('#btn-retry').addEventListener('click', () => this.replayWave());
     $('#btn-layout').addEventListener('click', () => this.setLayout?.(document.body.classList.contains('phone') ? 'desktop' : 'phone'));
     const mute = $('#btn-mute');
     const showMute = () => { mute.textContent = this.audio.muted ? '🔇' : '🔊'; mute.title = this.audio.muted ? 'Sound off (M)' : 'Sound on (M)'; };
@@ -312,6 +315,7 @@ export class UI {
   }
 
   updateHud() {
+    const rb = document.getElementById('btn-retry'); if (rb) { const hide = !this.waveSnap || this.g.phase === 'won'; if (rb.hidden !== hide) rb.hidden = hide; if (!hide) rb.title = `Replay wave ${this.waveSnap.wave + 1} (your newest code stays)`; }
     const g = this.g, el = this.el;
     el.credits.textContent = g.credits;
     el.core.textContent = `${g.core}/${g.coreMax}`;
@@ -1094,7 +1098,32 @@ export class UI {
       : `<h2 class="bad">Core breached</h2><p>You survived ${g.wave} wave${g.wave === 1 ? '' : 's'}.</p><p class="muted">Tip: check each turret's console for errors and brownouts, and the Power tab for energy use.</p>`,
       won && next
         ? [{ label: 'Campaign', fn: () => this.campaignModal() }, { label: '🧪 Lab', fn: () => this.labModal() }, { label: `Play ${next.name} ▶`, cls: 'primary', fn: () => this.startMap(next.id, false) }]
-        : [{ label: 'Campaign', fn: () => this.campaignModal() }, { label: 'Play again', cls: 'primary', fn: () => this.restart() }]);
+        : [{ label: 'Campaign', fn: () => this.campaignModal() }, { label: 'Restart map', fn: () => this.restart() },
+          ...(this.waveSnap ? [{ label: `↺ Replay wave ${this.waveSnap.wave + 1}`, cls: 'primary', fn: () => this.replayWave(false) }] : [])]);
+  }
+
+  // replay the last wave: everything goes back to just before it started (credits, core, parts,
+  // wires), but the player's newest turret code and Library stay, so they can retry with improvements
+  replayWave(ask = true) {
+    const snap = this.waveSnap; if (!snap) return;
+    const n = snap.wave + 1;
+    if (ask && !confirm(`Replay wave ${n}? Credits, core, parts and wires go back to how they were before wave ${n}. Your newest code stays.`)) return;
+    const codeNow = new Map(this.g.sockets().filter(s => s.turret).map(s => [`${s.c},${s.r},${s.turret.type}`, s.turret.code]));
+    const libNow = this.g.library.code;
+    this.el.modal.hidden = true;
+    this.closeEditor();
+    this.g.load(snap);
+    this.waveSnap = snap;   // can be replayed again
+    this.lessonDone = new Set(snap.lessonDone || []);
+    for (const s of this.g.sockets()) {
+      const code = s.turret && codeNow.get(`${s.c},${s.r},${s.turret.type}`);
+      if (code && code !== s.turret.code) this.g.compileTurret(s, code);
+    }
+    if (this.g.map.library && libNow !== this.g.library.code) this.g.setLibrary(libNow);
+    this.select(null);
+    this.renderGuide();
+    this.autosave();
+    this.toast(`Back to just before wave ${n}. Your newest code is kept.`, 'good');
   }
 
   restart() {

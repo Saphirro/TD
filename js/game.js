@@ -570,6 +570,7 @@ export class Game {
   startWave() {
     if (this.phase !== 'build') return;
     if (!this.py.ready) return this.fail('Python is still loading…');
+    this.emit('beforeWave');   // the UI keeps a snapshot so the wave can be replayed
     const M = this.map, wi = this.wave;
     const groups = M.waves[wi];
     const hpMul = M.hpBase * (1 + M.hpGrowth * wi);
