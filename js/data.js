@@ -1948,3 +1948,51 @@ export const MAPS = [
     starter: g => { g.addEntity('psu', 9, 2); },
   },
 ];
+
+// ---- endless mode ---------------------------------------------------------------------
+// Any campaign map can be played endlessly: same board, generated waves from the enemies of that
+// map (plus bugs and worms) that keep getting bigger and stronger; a boss every 10th wave
+// (bosses get 35 % more health every 10 waves, see Game.spawn). Score = waves survived.
+export const ENDLESS_WAVES = 100;
+const _endless = {};
+export function findMap(id) {
+  if (typeof id === 'string' && id.startsWith('endless:')) {
+    const base = MAPS.find(m => m.id === id.slice(8));
+    return base ? (_endless[id] ||= makeEndless(base)) : null;
+  }
+  return MAPS.find(m => m.id === id) || null;
+}
+function makeEndless(base) {
+  const types = [...new Set(base.waves.flat().map(g => g.t))];
+  const pool = [...new Set(['bug', 'worm', ...types.filter(t => !ENEMIES[t].boss)])];
+  const bosses = types.filter(t => ENEMIES[t].boss);
+  if (!bosses.length) bosses.push('rootkit');
+  const swarm = { mite: 2.5, packet: 2.5, worm: 1.5, bug: 1.2 };   // small enemies come in bigger groups
+  let seed = [...base.id].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);   // same waves every time for a map
+  const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  const lanes = base.paths.length, waves = [];
+  for (let w = 0; w < ENDLESS_WAVES; w++) {
+    const groups = [], nG = Math.min(4, 2 + Math.floor(w / 6));
+    if (w % 10 === 9) groups.push({ t: bosses[Math.floor(w / 10) % bosses.length], n: 1 + Math.floor(w / 30), gap: 8, p: Math.floor(rnd() * lanes) });
+    for (let k = 0; k < nG; k++) {
+      const t = pool[Math.floor(rnd() * pool.length)], s = swarm[t] || 0.7;
+      const n = Math.min(60, Math.round((5 + w) * s / Math.sqrt(nG) + 1));
+      const gap = Math.max(0.12, (1.3 / s) * (1 - Math.min(0.45, w * 0.01)));
+      groups.push({ t, n, gap: +gap.toFixed(2), p: Math.floor(rnd() * lanes), ...(groups.length ? { with: rnd() < 0.5, delay: 1 } : {}) });
+    }
+    waves.push(groups);
+  }
+  const lesson = {
+    title: 'Endless',
+    body: `<b>Endless mode</b> on ${base.name}. Waves keep coming, and every wave is bigger and stronger than the last. Every 10th wave brings a boss, and bosses get tougher each time.
+      <p>Your score is the number of waves you survive. Everything you learned in the campaign is allowed.</p>`,
+    tasks: [],
+    hint: 'Spend credits between waves: more turrets, PSU upgrades, and smarter code (targets by armor, slow fields on long lanes, arcs for swarms).',
+    solution: 'There is no single solution: keep improving your defense and your code.',
+  };
+  return { ...base, id: `endless:${base.id}`, name: `${base.name} · Endless`, label: '∞', endless: true, waves,
+    lessons: waves.map(() => lesson), goal: null, hpGrowth: Math.max(0.15, base.hpGrowth || 0.15),
+    start: { ...base.start, credits: Math.max(base.start.credits, 450) },   // map 1 starts tiny for the tutorial
+    starter: g => { base.starter?.(g); g.sockets().forEach(s => { if (s.turret) s.turret.code = TEMPLATES[s.turret.type]; }); },   // full program, not a lesson stub
+    unlock: Object.fromEntries(Object.keys(base.unlock).map(k => [k, 1])) };
+}

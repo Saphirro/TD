@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 import {
   COLS, ROWS, CODE_HZ, SELL_REFUND, WIRE_COST_PER_TILE, POWER, LIMITS, BUILDINGS, PORTS, UPGRADES, EXTRA_MODULES,
-  TURRETS, ENEMIES, TEMPLATES, MAPS, DEFAULT_LIBRARY,
+  TURRETS, ENEMIES, TEMPLATES, MAPS, DEFAULT_LIBRARY, findMap,
 } from './data.js';
 
 export const SAVE_VERSION = 1;
@@ -23,7 +23,7 @@ export class Game {
 
   // switch map (also resets the game). Precomputes path geometry for every lane.
   setMap(mapId, emit = true) {
-    this.map = MAPS.find(m => m.id === mapId) || MAPS[0];
+    this.map = findMap(mapId) || MAPS[0];
     this.paths = this.map.paths.map(pts => {
       const segs = [];
       let total = 0;
@@ -150,7 +150,7 @@ export class Game {
     }
     return this._plan;
   }
-  lessonLabel(i = this.lessonIndex()) { return this.lessonPlan()[i]?.label ?? String(i + 1); }
+  lessonLabel(i = this.lessonIndex()) { return this.map.endless ? '∞' : this.lessonPlan()[i]?.label ?? String(i + 1); }
   lessonIndex() {
     const L = this.map.lessons, plan = this.lessonPlan(), done = this.lessonDone || new Set();
     const lastWave = plan[plan.length - 1].wave, w = Math.min(this.wave + 1, lastWave);
@@ -592,9 +592,12 @@ export class Game {
     this.emit('change');
   }
 
+  // boss health multiplier: per map, and in endless mode +35 % every 10 waves
+  bossMul(wave = this.wave) { return (this.map.bossMul || 1) * (this.map.endless ? 1 + 0.35 * Math.floor(wave / 10) : 1); }
+
   spawn(type, hpMul, lane = 0, dist = 0) {
     const d = ENEMIES[type];
-    const mul = d.boss ? (this.map.bossMul || 1) : hpMul;   // bosses ignore wave growth; a map can make them weaker or stronger
+    const mul = d.boss ? this.bossMul() : hpMul;   // bosses ignore wave growth; a map can make them weaker or stronger
     const p = this.posAt(dist, lane);
     const e = {
       id: this.nextEnemyId++, type, def: d, dist, lane, x: p.x, y: p.y, vx: 0, vy: 0, dir: Math.atan2(p.dy, p.dx),

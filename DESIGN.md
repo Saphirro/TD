@@ -185,3 +185,11 @@ Permanent but **small** boosts. All of them together cost **35 stars**; 6 exist 
 - **5B CPU · Kernel panic** (`cpu-x`, 8 waves, lanes from the left, the right and below into a central core). ★★★: 4 turret types and sched in 2 turrets. Bots: learner wins (6/20), others lose. The finale is meant to be tight.
 - Lanes can now start on the right edge (spawn portal and glow follow the start side).
 - Sim bots now give triple weight to a lane no turret covers yet (otherwise they never defended the right lane). Chapters 1-4 results did not change.
+
+### Endless mode (2026-11-25)
+- Every cleared campaign map gets an **∞ Endless** button on the campaign screen (with the player's best score).
+- `findMap('endless:<id>')` in data.js builds the endless version of a map: same board, starter and unlocks (all unlocked from wave 1), at least 450 starting credits, starter turrets get the full template instead of a lesson stub.
+- Waves are generated once per map (fixed seed, so every run of a map has the same waves): enemies from that map plus bugs and worms, 2-4 groups on random lanes, bigger groups and shorter gaps every wave, health +15 % per wave (linear, never less than the map's own growth). Every 10th wave adds the map's boss (or a Rootkit), +1 boss every 30 waves, boss health +35 % every 10 waves (`Game.bossMul`). 100 waves in total.
+- Score = waves survived, saved per player (`cd.p.<pid>.endless`). No stars, no wave replay in endless.
+- Bots with template code reach waves 9-23 depending on the map, so better code and upgrades go clearly further.
+- Fix on the way: the wave preview now shows a boss's real health (with the map's boss multiplier).

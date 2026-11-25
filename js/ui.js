@@ -206,7 +206,7 @@ export class UI {
     game.on('beforeWave', () => { this.waveSnap = { ...this.g.serialize(), lessonDone: [...this.lessonDone] }; });
     game.on('map', () => { this.waveSnap = null; });   // a new or restarted map has nothing to replay
     game.on('lost', () => { this.sfx('lost'); this.clearSave(); this.endModal(false); });
-    game.on('won', () => { this.sfx('won'); this.recordWin(); this.clearSave(); this.endModal(true); });
+    game.on('won', () => { this.sfx('won'); if (!this.g.map.endless) this.recordWin(); this.clearSave(); this.endModal(true); });
     game.on('map', () => { this.closeEditor(); this.select(null); this.lessonDone.clear(); this.setTool('select'); this.renderGuide(); });
     this.renderGuide();
     this.refreshToolbar();
@@ -321,7 +321,7 @@ export class UI {
   }
 
   updateHud() {
-    const rb = document.getElementById('btn-retry'); if (rb) { const hide = !this.waveSnap || this.g.phase === 'won'; if (rb.hidden !== hide) rb.hidden = hide; if (!hide) rb.title = `Replay wave ${this.waveSnap.wave + 1} (your newest code stays)`; }
+    const rb = document.getElementById('btn-retry'); if (rb) { const hide = !this.waveSnap || this.g.phase === 'won' || !!this.g.map.endless; if (rb.hidden !== hide) rb.hidden = hide; if (!hide) rb.title = `Replay wave ${this.waveSnap.wave + 1} (your newest code stays)`; }
     const g = this.g, el = this.el;
     el.credits.textContent = g.credits;
     el.core.textContent = `${g.core}/${g.coreMax}`;
@@ -329,7 +329,7 @@ export class UI {
     el.coreBar.style.background = g.core / g.coreMax > 0.5 ? 'var(--accent)' : g.core / g.coreMax > 0.25 ? 'var(--warn)' : 'var(--bad)';
     const WAVES = g.map.waves;
     const wn = g.phase === 'wave' ? g.wave + 1 : Math.min(g.wave + 1, WAVES.length);
-    el.wave.textContent = `${wn}/${WAVES.length}`;
+    el.wave.textContent = g.map.endless ? `${wn} ∞` : `${wn}/${WAVES.length}`;
     const p = g.totalPower();
     el.power.textContent = `${Math.round(p.load)}/${p.cap} W`;
     el.power.style.color = p.cap && p.load / p.cap > 0.95 ? 'var(--bad)' : p.cap && p.load / p.cap > 0.7 ? 'var(--warn)' : '';
@@ -950,7 +950,7 @@ export class UI {
     $('#wave-title').textContent = `Wave ${wi + 1}`;
     $('#wave-preview').innerHTML = Object.entries(counts).map(([k, n]) => {
       const d = ENEMIES[k];
-      return `<div class="enemy-chip" title="${esc(d.desc)}"><span class="dot" style="background:${d.color}"></span><b>${n}×</b> ${d.name}<small>${Math.round(d.boss ? d.hp : d.hp * M.hpBase * (1 + M.hpGrowth * wi))} hp${d.armor ? ` · armor ${d.armor}` : ''}${d.shield ? ` · shield ${d.shield}` : ''} · ${d.desc}</small></div>`;
+      return `<div class="enemy-chip" title="${esc(d.desc)}"><span class="dot" style="background:${d.color}"></span><b>${n}×</b> ${d.name}<small>${Math.round(d.boss ? d.hp * g.bossMul(wi) : d.hp * M.hpBase * (1 + M.hpGrowth * wi))} hp${d.armor ? ` · armor ${d.armor}` : ''}${d.shield ? ` · shield ${d.shield}` : ''} · ${d.desc}</small></div>`;
     }).join('');
     this.checkLesson();
   }
@@ -1094,9 +1094,23 @@ export class UI {
     try { localStorage.setItem('cd.pathflow', on ? '1' : '0'); } catch { /* ignore */ }
   }
 
+  // endless mode: best score per map (waves survived), per player
+  endlessBest(id) { return (this.storeGet(this.pk('endless')) || {})[id] || 0; }
+  endlessEnd(won) {
+    const g = this.g, id = g.map.id.slice(8), waves = g.wave;
+    const best = this.endlessBest(id), isNew = waves > best;
+    if (isNew && !this.noSave) { const all = this.storeGet(this.pk('endless')) || {}; all[id] = waves; this.storeSet(this.pk('endless'), all); }
+    this.modal(`<h2 class="${won ? 'good' : 'bad'}">${won ? 'Endless cleared!' : 'Core breached'}</h2>
+      <p>${esc(g.map.name)}: you survived <b>${waves}</b> wave${waves === 1 ? '' : 's'}.</p>
+      <p class="${isNew ? 'good' : 'muted'}">${isNew ? (best ? `New best! (was ${best})` : 'First score on this map!') : `Your best: ${best} waves.`}</p>
+      <p class="muted">${g.stats.kills} enemies destroyed.</p>`,
+      [{ label: 'Campaign', fn: () => this.campaignModal() }, { label: 'Try again', cls: 'primary', fn: () => this.startMap(g.map.id, false) }]);
+  }
+
   endModal(won) {
     const g = this.g;
     this.closeEditor();
+    if (g.map.endless) return this.endlessEnd(won);
     const i = MAPS.findIndex(m => m.id === g.map.id);
     const next = MAPS[i + 1];
     this.modal(won
@@ -1112,6 +1126,7 @@ export class UI {
   // wires), but the player's newest turret code and Library stay, so they can retry with improvements
   replayWave(ask = true) {
     const snap = this.waveSnap; if (!snap) return;
+    if (this.g.map.endless) { this.toast('Replay is off in endless mode: your score is how far you get in one go.', 'bad'); return; }
     const n = snap.wave + 1;
     if (ask && !confirm(`Replay wave ${n}? Credits, core, parts and wires go back to how they were before wave ${n}. Your newest code stays.`)) return;
     const codeNow = new Map(this.g.sockets().filter(s => s.turret).map(s => [`${s.c},${s.r},${s.turret.type}`, s.turret.code]));
@@ -1342,10 +1357,11 @@ export class UI {
         <div class="map-acts">
           ${save ? `<button class="primary" data-map="${m.id}" data-save="1">Continue</button>` : ''}
           <button class="${save ? 'ghost' : unlocked ? 'primary' : 'ghost'}" data-map="${m.id}">${save ? 'Restart' : unlocked ? 'Play' : 'Play anyway'}</button>
+          ${won ? `<button class="ghost endless-btn" data-map="endless:${m.id}" title="Endless mode: waves keep getting harder. Score = waves survived.">∞ Endless${this.endlessBest(m.id) ? ` · best ${this.endlessBest(m.id)}` : ''}</button>` : ''}
         </div></div>`;
     }).join('');
     const me = this.currentProfile();
-    this.modal(`<h2>Campaign</h2><p class="muted">${me ? `Playing as ${me.avatar} <b>${esc(me.name)}</b> · ` : ""}Each map teaches new code. Progress is saved on this device between waves.</p><p class="lab-line">⭐ <b>${this.starsEarned()}</b> stars earned · <b>${this.starsEarned() - this.starsSpent()}</b> free to spend in the <b>Lab</b>.</p><div class="maps">${cards}</div>`,
+    this.modal(`<h2>Campaign</h2><p class="muted">${me ? `Playing as ${me.avatar} <b>${esc(me.name)}</b> · ` : ""}Each map teaches new code. Progress is saved on this device between waves. Cleared maps can also be played in <b>∞ Endless</b> mode.</p><p class="lab-line">⭐ <b>${this.starsEarned()}</b> stars earned · <b>${this.starsEarned() - this.starsSpent()}</b> free to spend in the <b>Lab</b>.</p><div class="maps">${cards}</div>`,
       [{ label: '🧪 Lab', fn: () => this.labModal() }, { label: 'Switch player', fn: () => this.playersModal() }, { label: 'Close', fn: () => {} }]);
     this.el.modal.querySelector('.maps').onclick = e => {
       const b = e.target.closest('button[data-map]'); if (!b) return;

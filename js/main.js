@@ -14,7 +14,7 @@ const showBootError = msg => {
 window.addEventListener('error', e => showBootError(e.message || e.error));
 window.addEventListener('unhandledrejection', e => showBootError(e.reason?.message || e.reason));
 
-export const VERSION = '2026.11.25-19';   // shown on the loading screen and in Settings (helps spot old cached copies)
+export const VERSION = '2026.11.25-20';   // shown on the loading screen and in Settings (helps spot old cached copies)
 window.CD_VERSION = VERSION;
 const py = new PyRuntime();
 const game = new Game(py);
