@@ -38,6 +38,7 @@ export async function run(opts = {}) {
   const { game: g, ui } = window.__cd;
   ui.noSave = true;
   ui.audio.quiet = true;
+  ui.forceBoost = opts.boost || {};   // bots play with no Lab boosts unless told otherwise
   if (opts.map && g.map.id !== opts.map) g.setMap(opts.map);
   ui.restart();
   ui.userPaused = true;
@@ -128,17 +129,18 @@ export async function run(opts = {}) {
   return { result: g.phase, cleared: g.wave, log };
 }
 
-export async function report(map) {
+export async function report(map, boost) {   // boost: Lab boosts to test with, e.g. labBoost({ core: 1, budget: 1 })
   const out = {};
-  out.learner = await run({ map, spend: 1, codeAt: learnerCode, wattsPerTower: 30 });
-  out.learnerHalf = await run({ map, spend: 0.6, codeAt: learnerCode, wattsPerTower: 30 });
-  out.templatesOnly = await run({ map, spend: 1 });
-  out.naive = await run({ map, spend: 0.8, code: NAIVE });
+  out.learner = await run({ map, boost, spend: 1, codeAt: learnerCode, wattsPerTower: 30 });
+  out.learnerHalf = await run({ map, boost, spend: 0.6, codeAt: learnerCode, wattsPerTower: 30 });
+  out.templatesOnly = await run({ map, boost, spend: 1 });
+  out.naive = await run({ map, boost, spend: 0.8, code: NAIVE });
   const lines = [];
   for (const [k, r] of Object.entries(out)) {
     lines.push(`${k.toUpperCase()}: ${r.result} (cleared ${r.cleared})`);
     for (const l of r.log) lines.push(`  w${l.wave} core ${l.core} (-${l.leaks}) cr ${l.credits} ${l.towers} psu ${l.psus} brown ${l.brownoutPct}% overload ${l.overloadPct}% minCap ${l.minCapPct}% lowPwr ${l.lowPowerPct}% ${l.secs}s`);
   }
+  window.__cd.ui.forceBoost = undefined;
   window.__cd.ui.restart();
   return lines.join('\n');
 }

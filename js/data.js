@@ -55,6 +55,24 @@ export const BUILDINGS = {
 // everything further down a chain shares the wire feeding it (5 A = 60 W).
 export const PORTS = { psu: 4, splitter: 3, socket: 1 };
 // upgrade levels (level 1 = as built). Costs are paid per step and count toward the sell value.
+// The Lab: permanent boosts bought with stars between maps (per player). Small on purpose:
+// every map must stay winnable without them. All levels together cost 35 stars.
+export const LAB = [
+  { id: 'library', icon: '📚', name: 'Library capacity', desc: 'Bring one more of your own functions into a new map (basic modules never count). Everyone starts with 1.', per: '+1 function', levels: 3, cost: 2 },
+  { id: 'core', icon: '🛡', name: 'Core shield', desc: 'The CPU core can take more hits on every map.', per: '+2 core', levels: 3, cost: 1 },
+  { id: 'slots', icon: '🧩', name: 'Socket CPU', desc: 'Every new socket has an extra module slot.', per: '+1 module slot', levels: 2, cost: 3 },
+  { id: 'psu', icon: '⚡', name: 'PSU efficiency', desc: 'Every PSU gives more power.', per: '+10 W per PSU', levels: 3, cost: 1 },
+  { id: 'wire', icon: '〰', name: 'Thicker wires', desc: 'Every wire carries more current.', per: '+1 A (+12 W) per wire', levels: 2, cost: 2 },
+  { id: 'budget', icon: '💰', name: 'Starting budget', desc: 'More credits when a map starts.', per: '+20 credits', levels: 3, cost: 1 },
+  { id: 'bonus', icon: '📈', name: 'Wave bonus', desc: 'More credits after each wave.', per: '+5% wave bonus', levels: 3, cost: 2 },
+  { id: 'charge', icon: '🔋', name: 'Fast charging', desc: 'Sockets refill their capacitor faster.', per: '+5 W charging', levels: 2, cost: 2 },
+];
+// what a set of Lab levels does in the game rules
+export function labBoost(levels = {}) {
+  const l = id => levels[id] || 0;
+  return { library: 1 + l('library'), core: 2 * l('core'), slots: l('slots'), psuW: 10 * l('psu'), wireA: l('wire'),
+    credits: 20 * l('budget'), bonusPct: 0.05 * l('bonus'), chargeW: 5 * l('charge') };
+}
 export const EXTRA_MODULES = ['power', 'meter', 'lib'];   // need a free module slot on the socket
 export const UPGRADES = {
   psu: [{ maxW: 100 }, { maxW: 140, cost: 60 }, { maxW: 180, cost: 90 }],
@@ -737,6 +755,8 @@ export const MAPS = [
     paths: [PATH], core: CORE, start: START, waves: WAVES, lessons: LESSONS,
     hpBase: 1, hpGrowth: WAVE_HP_GROWTH, bonus: WAVE_BONUS,
     unlock: { cannon: 1, pulse: 7, laser: 9, upgrades: 6 }, library: false, starter: MOTHERBOARD_STARTER,
+    // ★★★ code goal (checked when the map is cleared)
+    goal: { text: 'Every cannon uses your <code>in_range</code> function, and no pulse ever surged', check: g => turretsOf(g, 'cannon').length > 0 && turretsOf(g, 'cannon').every(t => /in_range\(/.test(t.code)) && !g.stats.surges },
   },
   {
     id: 'gpu', name: 'Graphics card', num: 2,
@@ -760,6 +780,7 @@ export const MAPS = [
     lessons: GPU_LESSONS,
     hpBase: 1.0, hpGrowth: 0.10, bonus: w => 35 + 8 * w,
     unlock: { cannon: 1, pulse: 1, laser: 1, upgrades: 1 }, library: true,
+    goal: { text: 'Every turret uses your Library (<code>import lib</code>)', check: g => turretsOf(g).length > 0 && turretsOf(g).every(t => /\bimport\s+[\w, ]*\blib\b|from\s+lib\s+import/.test(t.code)) },
     starter: g => { g.addEntity('psu', 1, 5); },
   },
 ];

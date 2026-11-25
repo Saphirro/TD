@@ -105,3 +105,53 @@ Key numbers: PSU 100 W, socket charge 30 W, shot 1.5 J per damage point, HP +14%
 7. **Save/load** of progress and programs (localStorage first, accounts later).
 8. **Sound and music**, richer enemy death animations, sprite art if desired.
 9. Move Python into a Web Worker for many turrets on slow phones.
+
+## Campaign roadmap (proposal, 2026-11-25)
+
+The campaign is a tour through a computer. Each **chapter** is one part of the machine, teaches one block of Python and adds **one new module** (plus sometimes a turret or enemy). Each chapter has **2 maps**:
+- **Map A (lesson map)**: lessons wave by wave, like the motherboard now (~10-11 waves).
+- **Map B (exam map)**: short lessons, harder waves, must use what map A taught (~8 waves, like the graphics card now).
+
+| Ch. | Part of the computer | Python it teaches | New module / turret | New enemy |
+|---|---|---|---|---|
+| 1 | Motherboard (1A built, 1B = new short map) | calling functions, `if`, own functions (3½), variables, `for`, targeting, `global` | radar, motor, cannon, pulse, laser, power, meter | bug, worm, mite, beetle, Rootkit boss |
+| 2 | Graphics card (2A = current map 2, 2B new) | functions with return values, the Library, dictionaries, sorting, default parameters, f-strings | `lib` (your own module) | forkbomb |
+| 3 | RAM | lists in depth (append, remove, slices), `while`, list comprehensions, simple state (modes) | `mem`: shared memory, turrets can write/read values for each other · **Slow field** turret | memory leak (grows over time) |
+| 4 | Network card | classes and objects, methods, messages between turrets | `net`: send/receive messages · **Arc** turret (lightning that jumps between enemies) | packet swarm (splits across lanes) |
+| 5 | CPU / Server room | algorithms (search, sort by several keys), `try/except`, recursion light, efficiency (CPU budget) | `sched`: share CPU lines between sockets | polymorphic virus (changes armor type) + final boss |
+
+**10 maps in total**, about 90-100 waves. More chapters (sound card, power plant, quantum chip...) can be added later without changing the system.
+
+### Stars (3 per map, 30 in total)
+- ★ clear the map
+- ★★ clear it with the core at 15/20 or more
+- ★★★ the map's **code goal** (e.g. 1A: every cannon uses `in_range` and no pulse surges; 2A: every turret uses `lib`)
+- each star is earned once; replaying can only add the missing ones (no grinding)
+
+### Lab (spend stars between maps, per player, can be reset)
+Permanent but **small** boosts. All of them together cost **35 stars**; 6 exist today (2 maps), 30 when all 10 maps exist. Maps are balanced so they are winnable with **no** boosts and clearly easier with the expected set (about 2 stars per finished map).
+
+| Boost | Per level | Levels | Stars per level |
+|---|---|---|---|
+| Library capacity: your own functions/modules you can bring into the next map (basic modules never count) | +1 function (start: 1) | 3 | 2 |
+| Core shield | +2 core | 3 | 1 |
+| Socket CPU | +1 module slot on new sockets | 2 | 3 |
+| PSU efficiency | +10 W per PSU | 3 | 1 |
+| Thicker wires | +1 A per wire (+12 W) | 2 | 2 |
+| Starting budget | +20 credits at map start | 3 | 1 |
+| Wave bonus | +5% credits after each wave | 3 | 2 |
+| Fast charging | +5 W socket charging | 2 | 2 |
+
+**Library capacity** ties the chapters together: functions you write (in_range in 1A, pick_target in 2A, ...) are kept in your profile; at the start of a map you choose which of them come along, up to your capacity. More capacity = more of your own tools. Writing them is always required the first time (the lesson's "Show solution" stays for people who don't want to).
+
+### Balancing across chapters
+- Each map is tuned with the bots twice: **no boosts** (must still be winnable by the learner bot) and **expected boosts for that point** (stars available so far ≈ 2 per map before it).
+- Total boost power stays under about +25% by chapter 5, so later maps never become trivial for players who bought everything.
+- In-map upgrades (PSU/socket ⬆) reset every map; the Lab is the only thing that carries over.
+
+### Built so far (2026-11-25)
+- Stars (3 per map, goals in `MAPS[].goal`), shown on campaign cards and the win screen ("new!" for stars earned this time).
+- Lab (`LAB` + `labBoost()` in data.js, 🧪 button on the campaign screen and the win screen), per player, with reset. Boosts are applied when a map starts or restarts (`game.boost`).
+- Library capacity: functions kept with `keeps:` are offered on maps with a Library; with more functions than capacity a "Pack your Library" window lets the player choose.
+- Bots: `S.report(map, boost)` tests with a boost set, e.g. `labBoost({ core: 1, budget: 1, psu: 1 })`.
+- Map 2 results: no boosts: learner wins (core 10/20), others lose. 3 stars (core, budget, psu): learner 12/22, others still lose. **All boosts maxed (35 stars): even templatesOnly wins**, so maps in later chapters must be tuned for the stars a player can have by then.

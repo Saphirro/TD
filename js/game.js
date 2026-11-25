@@ -50,9 +50,10 @@ export class Game {
     this.time = 0;
     this.acc = 0;
     this.codeAcc = 0;
-    this.credits = M.start.credits;
-    this.core = M.start.core;
-    this.coreMax = M.start.core;
+    const B = this.boost || {};   // Lab boosts of the current player (set by the UI before a map starts)
+    this.credits = M.start.credits + (B.credits || 0);
+    this.core = M.start.core + (B.core || 0);
+    this.coreMax = M.start.core + (B.core || 0);
     this.library = { code: DEFAULT_LIBRARY, error: null, logs: [], logVersion: 0, draft: null };
     this.wave = 0;              // number of waves cleared
     this.phase = 'build';       // build | wave | lost | won
@@ -216,6 +217,9 @@ export class Game {
     e.level = Math.max(1, Math.min(U.length, level));
     Object.assign(e, U[e.level - 1]);
     delete e.cost;   // (the level table has a cost field; it isn't a property of the part)
+    const B = this.boost || {};   // Lab boosts add on top of every level
+    if (e.type === 'psu') e.maxW += B.psuW || 0;
+    if (e.type === 'socket') { e.chargeW += B.chargeW || 0; e.slots += B.slots || 0; }
   }
   // what the next upgrade of this part would be, or why there is none
   upgradeInfo(e) {
@@ -312,7 +316,7 @@ export class Game {
       if (this.credits < spent) return `Need ${spent} credits for this wire (${WIRE_COST_PER_TILE} per tile).`;
       this.credits -= spent;
     }
-    const w = { id: this.nextId++, from: a.id, to: b.id, maxA: POWER.wireA, a: 0, aS: 0, phase: 0, ri: 0, spent };
+    const w = { id: this.nextId++, from: a.id, to: b.id, maxA: POWER.wireA + (this.boost?.wireA || 0), a: 0, aS: 0, phase: 0, ri: 0, spent };
     w.routes = this.routeOptions(a, b);
     w.route = w.routes[0];
     this.wires.set(w.id, w);
@@ -670,7 +674,7 @@ export class Game {
 
   endWave() {
     this.wave++;
-    const bonus = this.map.bonus(this.wave);
+    const bonus = Math.round(this.map.bonus(this.wave) * (1 + (this.boost?.bonusPct || 0)));
     this.credits += bonus;
     if (this.wave >= this.map.waves.length) {
       this.phase = 'won';
@@ -695,7 +699,7 @@ export class Game {
       let sum = e._own;
       for (const wid of e.outputs) {
         const w = this.wires.get(wid);
-        w._d = Math.min(demand(this.ents.get(w.to)), wireW);
+        w._d = Math.min(demand(this.ents.get(w.to)), w.maxA * V);
         sum += w._d;
       }
       return (e._d = sum);
@@ -899,6 +903,7 @@ export class Game {
     const hit = [];
     const walk = e => { for (const wid of e.outputs) { const n = this.ents.get(this.wires.get(wid).to); if (n.type === 'socket' && n !== s) hit.push(n); walk(n); } };
     walk(root);
+    this.stats.surges = (this.stats.surges || 0) + 1;
     for (const n of hit) { this.drain(n, joules); this.spark(n.x, n.y, '#ffcf4a', 4); }
     this.fx.push({ type: 'text', x: s.x, y: s.y - 0.6, text: 'SURGE', t: 0, life: 1, color: '#ffcf4a', small: true });
     if (s.turret) this.log(s.turret, `SURGE: the pulse hit ${hits ? 'only one enemy' : 'no enemy'} and drained ${joules} J from ${hit.length} other socket${hit.length === 1 ? '' : 's'} on this PSU. Fire only when several enemies are in range.`, 'warn');

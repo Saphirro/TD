@@ -464,3 +464,21 @@ body.phone #coach .cl { font-size: 11px; }
 #ed-hint.focus { border-color: #ffcf6a; }
 /* iPhone zooms into any text field with letters under 16 px; keep the editor's input at 16 px on phones */
 body.phone .CodeMirror, body.phone .CodeMirror textarea, body.phone .fallback-editor, body.phone .field input { font-size: 16px; }
+
+/* ---------- stars and the Lab ---------- */
+.stars { color: var(--gold); letter-spacing: 1px; font-size: 14px; }
+.lab-line { margin: 0 0 6px; }
+.star-list { margin: 10px 0; display: grid; gap: 4px; }
+.star-list div { color: var(--muted); }
+.star-list div span { color: #4a5a52; font-size: 18px; margin-right: 4px; }
+.star-list div.got { color: var(--text); }
+.star-list div.got span { color: var(--gold); }
+.star-list .new { color: var(--gold); font-size: 12px; }
+.lab { display: grid; gap: 6px; max-height: 55vh; overflow: auto; margin: 8px 0; }
+.lab-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: #0b1d16; }
+.lab-ic { font-size: 22px; width: 30px; text-align: center; flex: none; }
+.lab-info { flex: 1; min-width: 0; }
+.lab-info small { display: block; color: var(--muted); }
+.lab-pips { color: var(--gold); font-size: 12px; letter-spacing: 2px; margin-left: 4px; }
+.lab-row button { flex: none; min-width: 64px; }
+.modal-box:has(.lab) { width: min(560px, 100%); }

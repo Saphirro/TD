@@ -2,7 +2,7 @@
 // DOM user interface: HUD, toolbar, info card, code editor, lessons, modals.
 // ---------------------------------------------------------------------------
 import { Sfx } from './audio.js';
-import { BUILDINGS, TURRETS, DOCS, TEMPLATES, POWER, ENEMIES, PORTS, MAPS, DEFAULT_LIBRARY, SELL_REFUND, WIRE_COST_PER_TILE, UPGRADES } from './data.js';
+import { BUILDINGS, TURRETS, DOCS, TEMPLATES, POWER, ENEMIES, PORTS, MAPS, DEFAULT_LIBRARY, SELL_REFUND, WIRE_COST_PER_TILE, UPGRADES, LAB, labBoost } from './data.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -459,11 +459,22 @@ export class UI {
   }
 
   // a new map with a Library starts with the player's own functions in it
-  libraryWithMine() {
-    const mine = this.storeGet(this.pk('myFunctions')) || {};
-    const fns = Object.values(mine);
-    if (!fns.length) return null;
-    return `${DEFAULT_LIBRARY.trimEnd()}\n\n# Written by you on an earlier map:\n${fns.join('\n\n')}\n`;
+  libraryWithMine(list) {   // list: [[name, code], ...]
+    if (!list?.length) return null;
+    return `${DEFAULT_LIBRARY.trimEnd()}\n\n# Written by you on an earlier map:\n${list.map(([, code]) => code).join('\n\n')}\n`;
+  }
+
+  // more own functions than Library capacity: the player picks which come along
+  pickFunctionsModal(mine, cap, done) {
+    this.modal(`<h2>Pack your Library</h2>
+      <p class="muted">You have written ${mine.length} functions. Your Library can carry <b>${cap}</b> into this map (more capacity in the 🧪 Lab).</p>
+      <div class="fn-pick">${mine.map(([n, code], i) => `<label class="opt"><input type="checkbox" data-i="${i}" ${i < cap ? 'checked' : ''}><div><b>${esc(n)}</b><small><code>${esc(code.split('\n')[0])}</code></small></div></label>`).join('')}</div>`,
+      [{ label: 'Take these', cls: 'primary', fn: () => done(mine.filter((_, i) => this.el.modal.querySelector(`input[data-i="${i}"]`)?.checked).slice(0, cap)) }],
+      { locked: true });
+    this.el.modal.querySelector('.fn-pick').onchange = e => {
+      const boxes = [...this.el.modal.querySelectorAll('.fn-pick input')];
+      if (boxes.filter(b => b.checked).length > cap) e.target.checked = false;   // never more than the capacity
+    };
   }
 
   // ---- hints: reveal the next line of the answer faintly in the editor ------------------
@@ -631,7 +642,8 @@ export class UI {
   // upgrade row + button for PSUs and sockets
   upgradeText(e, lvl) {
     const U = UPGRADES[e.type]?.[lvl - 1]; if (!U) return '';
-    return e.type === 'psu' ? `${U.maxW} W` : `${U.chargeW} W charging, ${U.cap} J, ${U.slots} module slot${U.slots === 1 ? '' : 's'}`;
+    const B = this.g.boost || {};   // shown with the player's Lab boosts included
+    return e.type === 'psu' ? `${U.maxW + (B.psuW || 0)} W` : `${U.chargeW + (B.chargeW || 0)} W charging, ${U.cap} J, ${U.slots + (B.slots || 0)} module slot${U.slots + (B.slots || 0) === 1 ? '' : 's'}`;
   }
   upgradeHtml(e) {
     const U = UPGRADES[e.type]; if (!U) return '';
@@ -1070,16 +1082,17 @@ export class UI {
     const i = MAPS.findIndex(m => m.id === g.map.id);
     const next = MAPS[i + 1];
     this.modal(won
-      ? `<h2 class="good">System secured!</h2><p>You cleared all ${g.map.waves.length} waves of <b>${g.map.name}</b>.</p><p class="muted">${g.stats.kills} bugs squashed, core integrity ${g.core}/${g.coreMax}.</p>${next ? `<p>Next up: <b>${next.name}</b>. ${next.desc}</p>` : '<p>That was the last map, for now.</p>'}`
+      ? `<h2 class="good">System secured!</h2><p>You cleared all ${g.map.waves.length} waves of <b>${g.map.name}</b>.</p><p class="muted">${g.stats.kills} bugs squashed, core integrity ${g.core}/${g.coreMax}.</p>${this.starsHtml()}${next ? `<p>Next up: <b>${next.name}</b>. ${next.desc}</p>` : '<p>That was the last map, for now.</p>'}`
       : `<h2 class="bad">Core breached</h2><p>You survived ${g.wave} wave${g.wave === 1 ? '' : 's'}.</p><p class="muted">Tip: check each turret's console for errors and brownouts, and the Power tab for energy use.</p>`,
       won && next
-        ? [{ label: 'Campaign', fn: () => this.campaignModal() }, { label: `Play ${next.name} ▶`, cls: 'primary', fn: () => this.startMap(next.id, false) }]
+        ? [{ label: 'Campaign', fn: () => this.campaignModal() }, { label: '🧪 Lab', fn: () => this.labModal() }, { label: `Play ${next.name} ▶`, cls: 'primary', fn: () => this.startMap(next.id, false) }]
         : [{ label: 'Campaign', fn: () => this.campaignModal() }, { label: 'Play again', cls: 'primary', fn: () => this.restart() }]);
   }
 
   restart() {
     this.el.modal.hidden = true;
     this.clearSave();
+    this.applyBoost();
     this.g.setMap(this.g.map.id);   // resets the map and emits 'map' (UI resets itself)
   }
 
@@ -1188,24 +1201,80 @@ export class UI {
 
   progress() { return this.storeGet(this.pk('progress')) || { won: {} }; }
 
+  // stars: ★ cleared · ★ core at 15/20 or better (5 or fewer hits) · ★ the map's code goal.
+  // Each star is earned once; a replay can only add the missing ones.
+  starsFor() {
+    const g = this.g, goal = g.map.goal;
+    return [true, g.core >= g.coreMax - 5, !!(goal && goal.check(g))];
+  }
   recordWin() {
-    if (this.noSave) return;
+    const now = this.starsFor();
     const p = this.progress(), prev = p.won[this.g.map.id];
-    if (!prev || this.g.core > prev.core) p.won[this.g.map.id] = { core: this.g.core, max: this.g.coreMax, at: Date.now() };
+    const had = prev?.stars || [!!prev, false, false];
+    const stars = now.map((s, i) => s || had[i]);
+    this.lastStars = { now, had, stars };
+    if (this.noSave) return;
+    p.won[this.g.map.id] = { core: Math.max(this.g.core, prev?.core || 0), max: this.g.coreMax, stars, at: Date.now() };
     this.storeSet(this.pk('progress'), p);
+  }
+  // end screen: the three stars of this map, which ones are new this time
+  starsHtml() {
+    const s = this.lastStars; if (!s) return '';
+    const names = ['Cleared the map', `Core at ${this.g.coreMax - 5}/${this.g.coreMax} or better`, this.g.map.goal ? this.g.map.goal.text : 'Code goal'];
+    const newOnes = s.now.filter((x, i) => x && !s.had[i]).length;
+    return `<div class="star-list">${names.map((n, i) => `<div class="${s.stars[i] ? 'got' : ''}"><span>${s.stars[i] ? '★' : '☆'}</span> ${n}${s.now[i] && !s.had[i] ? ' <b class="new">new!</b>' : ''}</div>`).join('')}</div>
+      ${newOnes ? `<p class="good">+${newOnes} star${newOnes === 1 ? '' : 's'} for the <b>Lab</b> (campaign screen).</p>` : ''}`;
+  }
+  starCount(id) { const w = this.progress().won[id]; return w ? (w.stars || [true, false, false]).filter(Boolean).length : 0; }
+  starsEarned() { return MAPS.reduce((a, m) => a + this.starCount(m.id), 0); }
+
+  // ---- the Lab: spend stars on small permanent boosts (per player) ------------------------
+  labLevels() { return this.storeGet(this.pk('lab')) || {}; }
+  starsSpent(levels = this.labLevels()) { return LAB.reduce((a, b) => a + (levels[b.id] || 0) * b.cost, 0); }
+  applyBoost() { this.g.boost = this.forceBoost ?? labBoost(this.labLevels()); }   // forceBoost: set by the balance bots
+
+  labModal() {
+    const lv = this.labLevels(), free = this.starsEarned() - this.starsSpent(lv);
+    const rows = LAB.map(b => {
+      const n = lv[b.id] || 0, max = n >= b.levels, can = !max && free >= b.cost;
+      return `<div class="lab-row"><span class="lab-ic">${b.icon}</span>
+        <div class="lab-info"><b>${b.name}</b> <span class="lab-pips">${'●'.repeat(n)}${'○'.repeat(b.levels - n)}</span><small>${b.desc} <i>${b.per} per level.</i></small></div>
+        <button class="${can ? 'primary' : 'ghost'}" data-buy="${b.id}" ${can ? '' : 'disabled'}>${max ? 'Max' : `★ ${b.cost}`}</button></div>`;
+    }).join('');
+    this.modal(`<h2>Lab</h2>
+      <p class="muted">Spend stars on small permanent boosts for every map. <b>${free} ★ free</b> of ${this.starsEarned()} earned. Boosts apply when a map starts (or restarts). Every map can be won without them.</p>
+      <div class="lab">${rows}</div>`,
+      [{ label: 'Reset (get stars back)', cls: 'ghost', close: false, fn: () => { if (confirm('Take back all Lab boosts and get your stars back?')) { this.storeSet(this.pk('lab'), {}); this.labModal(); } } },
+        { label: 'Back to campaign', cls: 'primary', fn: () => this.campaignModal() }]);
+    this.el.modal.querySelector('.lab').onclick = e => {
+      const b = e.target.closest('[data-buy]'); if (!b || b.disabled) return;
+      const L = this.labLevels(); L[b.dataset.buy] = (L[b.dataset.buy] || 0) + 1;
+      this.storeSet(this.pk('lab'), L);
+      this.sfx('upload');
+      this.labModal();
+    };
   }
 
   startMap(id, fromSave) {
     this.el.modal.hidden = true;
     const save = fromSave ? this.storeGet(this.saveKey(id)) : null;
     if (!fromSave) { try { localStorage.removeItem(this.saveKey(id)); } catch { /* ignore */ } }
+    this.applyBoost();   // the player's Lab boosts for this map
     this.g.setMap(id);
     if (save && this.g.load(save)) {
       this.lessonDone = new Set(save.lessonDone || []);
       this.toast(`Welcome back! ${this.g.map.name}, wave ${this.g.wave + 1}.`, 'good');
     } else if (this.g.map.library) {
-      const lib = this.libraryWithMine();   // functions written on earlier maps come along
-      if (lib) { this.g.library.code = lib; this.g.syncLibrary(); this.toast('Your in_range function from map 1 is in your Library (📚).', 'good'); }
+      // your own functions from earlier maps come along, up to your Library capacity (Lab)
+      const mine = Object.entries(this.storeGet(this.pk('myFunctions')) || {});
+      const cap = this.g.boost?.library ?? 1;
+      const take = list => {
+        if (!list.length) return;
+        this.g.library.code = this.libraryWithMine(list); this.g.syncLibrary();
+        this.toast(`In your Library (📚): ${list.map(([n]) => n).join(', ')}`, 'good');
+      };
+      if (mine.length <= cap) take(mine);
+      else setTimeout(() => this.pickFunctionsModal(mine, cap, take), 400);
     }
     this.renderGuide();
     this.storeSet(this.pk('lastMap'), id);
@@ -1219,7 +1288,9 @@ export class UI {
       const save = this.storeGet(this.saveKey(m.id));
       const won = prog.won[m.id];
       const unlocked = i === 0 || prog.won[MAPS[i - 1].id];
-      const status = won ? `<span class="good">✓ Cleared · core ${won.core}/${won.max}</span>`
+      const st = won ? (won.stars || [true, false, false]) : [false, false, false];
+      const starHtml = `<span class="stars" title="★ cleared · ★ core 15/20+ · ★ ${m.goal ? m.goal.text.replace(/<[^>]+>/g, "") : "code goal"}">${st.map(s => (s ? "★" : "☆")).join("")}</span>`;
+      const status = won ? `<span class="good">✓ Cleared · core ${won.core}/${won.max}</span> ${starHtml}`
         : save ? `<span class="warn">In progress · wave ${save.wave + 1}/${m.waves.length}</span>`
         : unlocked ? '<span class="muted">Not started</span>' : `<span class="muted">🔒 Clear ${MAPS[i - 1].name} first</span>`;
       return `<div class="map-card ${unlocked ? '' : 'locked'}">
@@ -1231,8 +1302,8 @@ export class UI {
         </div></div>`;
     }).join('');
     const me = this.currentProfile();
-    this.modal(`<h2>Campaign</h2><p class="muted">${me ? `Playing as ${me.avatar} <b>${esc(me.name)}</b> · ` : ""}Each map teaches new code. Progress is saved on this device between waves.</p><div class="maps">${cards}</div>`,
-      [{ label: 'Switch player', fn: () => this.playersModal() }, { label: 'Close', fn: () => {} }]);
+    this.modal(`<h2>Campaign</h2><p class="muted">${me ? `Playing as ${me.avatar} <b>${esc(me.name)}</b> · ` : ""}Each map teaches new code. Progress is saved on this device between waves.</p><p class="lab-line">⭐ <b>${this.starsEarned()}</b> stars earned · <b>${this.starsEarned() - this.starsSpent()}</b> free to spend in the <b>Lab</b>.</p><div class="maps">${cards}</div>`,
+      [{ label: '🧪 Lab', fn: () => this.labModal() }, { label: 'Switch player', fn: () => this.playersModal() }, { label: 'Close', fn: () => {} }]);
     this.el.modal.querySelector('.maps').onclick = e => {
       const b = e.target.closest('button[data-map]'); if (!b) return;
       this.startMap(b.dataset.map, !!b.dataset.save);
