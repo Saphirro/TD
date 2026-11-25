@@ -176,3 +176,12 @@ Permanent but **small** boosts. All of them together cost **35 stars**; 6 exist 
 - **4A Network card** (`net`, 10 waves, three lanes into one CPU). ★★★: two turrets work together with net. Bots: learner wins (12/20), others lose.
 - **4B Network card · Packet storm** (`net-x`, 8 waves): exam. ★★★: use your own class and an Arc. Bots: learner wins (13/20), others lose.
 - Sim fix: a bot that cannot afford a turret after building its socket now stops instead of crashing.
+
+### Chapter 5 complete (2026-11-25): CPU (campaign finale)
+- New module **`sched`** (scheduler): `sched.tick` (ticks this turret has run), `sched.every(n)` (True every n-th tick), `sched.spare()` (CPU lines left this tick). Needs a module slot. Teaches doing heavy work less often. (Sharing CPU lines between sockets from the roadmap was left out: it would need cross-turret CPU accounting for little teaching value.)
+- New enemies: **Polymorphic virus** (`poly`, switches every 3 s between fast/no armor and slow/armor 8; `target.armor` shows the current form) and the final boss **Kernel panic** (`kernel`: armor 4, regenerating shield, calls in a virus every 6 s, bursts into 4 viruses, 15 core damage). Engine: `morph` and `spawns` on enemy definitions.
+- Python topics: try/except, sorting with `key=lambda`, counting with dictionaries (`d.get(k, 0) + 1`), `break`, returning two values, efficiency with sched.
+- **5A CPU** (`cpu`, 10 waves, two lanes that merge). ★★★: use sched and try/except. Bots: learner wins (5/20), others lose.
+- **5B CPU · Kernel panic** (`cpu-x`, 8 waves, lanes from the left, the right and below into a central core). ★★★: 4 turret types and sched in 2 turrets. Bots: learner wins (6/20), others lose. The finale is meant to be tight.
+- Lanes can now start on the right edge (spawn portal and glow follow the start side).
+- Sim bots now give triple weight to a lane no turret covers yet (otherwise they never defended the right lane). Chapters 1-4 results did not change.

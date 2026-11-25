@@ -79,7 +79,7 @@ export function labBoost(levels = {}) {
   return { library: 1 + l('library'), core: 2 * l('core'), slots: l('slots'), psuW: 10 * l('psu'), wireA: l('wire'),
     credits: 20 * l('budget'), bonusPct: 0.05 * l('bonus'), chargeW: 5 * l('charge') };
 }
-export const EXTRA_MODULES = ['power', 'meter', 'lib', 'mem', 'net'];   // need a free module slot on the socket
+export const EXTRA_MODULES = ['power', 'meter', 'lib', 'mem', 'net', 'sched'];   // need a free module slot on the socket
 export const UPGRADES = {
   psu: [{ maxW: 100 }, { maxW: 140, cost: 60 }, { maxW: 180, cost: 90 }],
   // slots = extra modules a turret program may import (power, meter, lib); radar, motor and the weapon are always free
@@ -89,27 +89,27 @@ export const UPGRADES = {
 export const TURRETS = {
   cannon: {
     name: 'Cannon', cost: 60, unlock: 1, reload: 0.7, shellSpeed: 18,
-    modules: ['radar', 'motor', 'cannon', 'power', 'meter', 'mem', 'net'], color: '#5ee1ff',
+    modules: ['radar', 'motor', 'cannon', 'power', 'meter', 'mem', 'net', 'sched'], color: '#5ee1ff',
     desc: 'Fires shells in the direction it faces. Needs aiming.',
   },
   pulse: {
     name: 'Pulse', cost: 80, unlock: 5, reload: 1.4,
-    modules: ['radar', 'pulse', 'power', 'meter', 'mem', 'net'], color: '#ffcf4a',
+    modules: ['radar', 'pulse', 'power', 'meter', 'mem', 'net', 'sched'], color: '#ffcf4a',
     desc: 'Shockwave that hits every enemy in radar range.',
   },
   laser: {
     name: 'Laser', cost: 100, unlock: 8,
-    modules: ['radar', 'motor', 'laser', 'power', 'meter', 'mem', 'net'], color: '#ff5ea8',
+    modules: ['radar', 'motor', 'laser', 'power', 'meter', 'mem', 'net', 'sched'], color: '#ff5ea8',
     desc: 'Continuous beam. Ignores armor, drains watts while firing.',
   },
   field: {
     name: 'Slow field', cost: 70, unlock: 99,
-    modules: ['radar', 'field', 'power', 'meter', 'mem', 'net'], color: '#7ad7ff',
+    modules: ['radar', 'field', 'power', 'meter', 'mem', 'net', 'sched'], color: '#7ad7ff',
     desc: 'Slows every enemy in radar range while it is on. Uses watts while on, does no damage.',
   },
   arc: {
     name: 'Arc', cost: 90, unlock: 99, reload: 1.0,
-    modules: ['radar', 'arc', 'power', 'meter', 'mem', 'net'], color: '#c89bff',
+    modules: ['radar', 'arc', 'power', 'meter', 'mem', 'net', 'sched'], color: '#c89bff',
     desc: 'Lightning that hits a target, then jumps to nearby enemies. No aiming needed.',
   },
 };
@@ -125,6 +125,13 @@ export const ENEMIES = {
   packet:  { name: 'Packet', hp: 12, speed: 2.5, radius: 0.16, reward: 1, dmg: 1, armor: 0, color: '#5effc8', desc: 'Very fast and light. Comes in bursts.' },
   router:  { name: 'Router', hp: 90, speed: 0.7, radius: 0.33, reward: 10, dmg: 2, armor: 2, splits: { type: 'packet', n: 3 }, color: '#4fd1ff', desc: 'Armor 2. Sends out 3 packets when destroyed.' },
   rootkit: { name: 'Rootkit', hp: 1400, speed: 0.45, radius: 0.5,  reward: 100, dmg: 10, armor: 3, shield: 300, shieldRegen: 20, boss: true, color: '#b15cff', desc: 'Boss. Shield regenerates after 2 s without damage.' },
+  // chapter 5: a virus that keeps changing its form, and the final boss
+  poly:    { name: 'Polymorphic virus', hp: 55, speed: 1.0, radius: 0.29, reward: 8, dmg: 1, armor: 0,
+             morph: { every: 3, forms: [{ armor: 0, speed: 1.4 }, { armor: 8, speed: 0.6 }] }, color: '#3dffb0',
+             desc: 'Changes form every 3 s: fast with no armor, or slow with armor 8. Check target.armor before you shoot.' },
+  kernel:  { name: 'Kernel panic', hp: 2600, speed: 0.36, radius: 0.58, reward: 250, dmg: 15, armor: 4, shield: 400, shieldRegen: 25, boss: true,
+             spawns: { type: 'poly', every: 6 }, splits: { type: 'poly', n: 4 }, color: '#ff3b3b',
+             desc: 'Final boss. Shield regenerates after 2 s, calls in a polymorphic virus every 6 s and bursts into 4 more when destroyed.' },
 };
 
 // Each wave = groups spawned one after another.
@@ -672,6 +679,14 @@ export const DOCS = {
 <tr><td><code>net.channels()</code></td><td>Channels that had messages last tick.</td></tr>
 </table>
 <p>Difference to <code>mem</code>: mem keeps a value until it is overwritten; net messages are gone after one tick, like a radio call.</p>`,
+  sched: `<h3>sched (scheduler)</h3>
+<p>Plan <b>when</b> your code runs. Heavy work (sorting, counting, long loops) does not have to run every tick. Needs a module slot.</p>
+<table>
+<tr><td><code>sched.tick</code></td><td>How many ticks this turret has run (1, 2, 3, ...).</td></tr>
+<tr><td><code>sched.every(n)</code></td><td><code>True</code> on every n-th tick (n = 1..100), e.g. <code>if sched.every(5):</code>.</td></tr>
+<tr><td><code>sched.spare()</code></td><td>CPU lines this turret can still use in this tick.</td></tr>
+</table>
+<p>Store the result of heavy work in a variable outside <code>update()</code> (or in <code>mem</code>) and reuse it until the next run.</p>`,
   mem: `<h3>mem (shared memory)</h3>
 <p>One notebook that <b>every turret</b> on the map can read and write. Needs a module slot. It is emptied when a map starts.</p>
 <table>
@@ -1451,6 +1466,236 @@ net.receive("seen")                  # turret B`,
   },
 ];
 
+// ---- chapter 5: CPU (algorithms, errors, efficiency) -------------------------------
+const schedUsers = g => turretsOf(g).filter(t => t.compiled && /sched\.(every|spare|tick)/.test(t.code)).length;
+const usesTry = g => /^\s*try\s*:/m.test(allCode(g)) && /^\s*except\b[^\n]*:/m.test(allCode(g));
+const usesKeySort = g => /(sorted\(|\.sort\()[^\n]*key\s*=/.test(allCode(g));
+const usesCounting = g => /\w+\[[^\]\n]+\]\s*=\s*\w+\.get\([^\n]*\)\s*\+\s*1|\w+\[[^\]\n]+\]\s*\+=\s*1/.test(allCode(g));
+const usesTuple = g => /^\s*return\s+[^\n#,]+,\s*[^\n#]+/m.test(allCode(g)) && /^\s*\w+\s*,\s*\w+\s*=\s*\w+\(/m.test(allCode(g));
+
+const CPU_LESSONS = [
+  {
+    title: 'The CPU',
+    body: `Welcome to the <b>CPU</b>, the heart of the computer and the last chapter. Two lanes come in and merge before the core.
+      <p>Everything you learned is allowed here. This chapter is about writing code that is <b>smart</b>: it handles errors, sorts, counts and saves CPU time.</p>`,
+    tasks: [{ text: 'Build at least 3 turrets.', check: g => turretsOf(g).filter(t => t.compiled).length >= 3, focus: g => buildFocus(g, 'cannon') }],
+    hint: 'The merge point covers both lanes. Put a tower or two before it as well.',
+    solution: 'No code: build around the merge point.',
+  },
+  {
+    title: 'Polymorphic virus',
+    body: `<b>New enemy: polymorphic virus.</b> It changes its form every 3 seconds:
+      <ul><li><b>fast form</b>: speed 1.4, <code>armor</code> 0</li><li><b>armored form</b>: slow, <code>armor</code> 8 (every cannon or arc hit does 8 less)</li></ul>
+      <p>Your radar sees the current form: <code>target.armor</code>. Shoot the soft ones first:</p>
+<pre>soft = [e for e in enemies if e.armor &lt; 5]
+if len(soft) &gt; 0:
+    target = radar.first(soft)
+else:
+    target = radar.first(enemies)</pre>
+      <p>Lasers ignore armor completely, so they are good against the armored form.</p>`,
+    tasks: [{ text: 'A turret checks <code>.armor</code> to choose its target.', check: g => anyCode(g, /\.armor\b/), focus: g => ({ ents: turretSocks(g), code: /^def update/ }) }],
+    hint: 'Make a list of enemies with e.armor < 5 and aim at the first of those, if there are any.',
+    solution: `    soft = [e for e in enemies if e.armor < 5]
+    if len(soft) > 0:
+        target = radar.first(soft)
+    else:
+        target = radar.first(enemies)`,
+  },
+  {
+    title: 'Errors: try / except',
+    body: `When a line of <code>update()</code> causes an <b>error</b>, the rest of <code>update()</code> is skipped for that tick: the turret does nothing. For example, <code>enemies[0]</code> fails when the list is empty.
+      <p>With <code>try</code> / <code>except</code> you catch the error and decide what happens instead:</p>
+<pre>try:
+    target = enemies[0]           # may fail
+    motor.aim(target)
+except IndexError:                # only runs if that error happened
+    print("nothing to aim at")</pre>
+      <p>Catch the error you expect (<code>IndexError</code>, <code>KeyError</code>, <code>TypeError</code>...), not every error: a typo should still show up in the console.</p>`,
+    tasks: [{ text: 'Use <code>try:</code> with an <code>except ...:</code> block.', check: usesTry, focus: g => ({ ents: turretSocks(g), code: /^def update/ }),
+      ghost: [{ after: /^def update\(/, text: '    try:' }, { after: /^    try:/, text: '        target = enemies[0]' }, { after: /target = enemies\[0\]/, text: '    except IndexError:' }] }],
+    hint: 'try: (4 spaces deeper) the risky line, then except IndexError: (same depth as try) and what to do instead.',
+    solution: `    try:
+        target = enemies[0]
+        motor.aim(target)
+    except IndexError:
+        return`,
+  },
+  {
+    title: 'New module: sched',
+    body: `<b>New module: sched</b> (scheduler). Not everything has to run every tick (10 times a second). Heavy work can run less often:
+<pre>import radar, sched
+plan = []
+
+def update():
+    global plan
+    if sched.every(5):            # True on every 5th tick
+        plan = radar.scan()       # the heavy part, twice a second
+    ...                           # use plan the other ticks</pre>
+      <p>Each executed line costs CPU time and 2 mJ of energy, so a turret that thinks less often has more energy left for shooting. Needs a module slot.</p>`,
+    tasks: [{ text: 'A turret uses <code>sched.every(...)</code>.', check: g => anyCode(g, /sched\.every\(/), focus: g => ({ ents: turretSocks(g), code: /^import / }) }],
+    hint: 'Add sched to the import line, then wrap the heavy part in if sched.every(5):',
+    solution: `import radar, motor, cannon, sched
+plan = []
+
+def update():
+    global plan
+    if sched.every(5):
+        plan = radar.scan()`,
+  },
+  {
+    title: 'Sorting with a key',
+    body: `<code>sorted(list, key=...)</code> gives a new list in order. The <b>key</b> says what to sort by. A <code>lambda</code> is a tiny one-line function:
+<pre>by_hp = sorted(enemies, key=lambda e: e.hp)          # weakest first
+by_hp = sorted(enemies, key=lambda e: e.hp, reverse=True)   # strongest first
+enemies.sort(key=lambda e: e.distance)               # sorts the list itself</pre>
+      <p><code>lambda e: e.hp</code> means "give me e, I give back e.hp". The same works for <code>min()</code> and <code>max()</code>: <code>min(enemies, key=lambda e: e.distance)</code>.</p>`,
+    tasks: [{ text: 'Sort a list with <code>key=</code> (<code>sorted(...)</code> or <code>.sort(...)</code>).', check: usesKeySort, focus: g => ({ ents: turretSocks(g), code: /^def update/ }) }],
+    hint: 'order = sorted(enemies, key=lambda e: e.hp), then target = order[0]',
+    solution: `    order = sorted(enemies, key=lambda e: e.hp)
+    target = order[0]`,
+  },
+  {
+    title: 'Counting with a dictionary',
+    body: `A <b>dictionary</b> stores values under names. It is perfect for counting:
+<pre>kinds = {}
+for e in enemies:
+    kinds[e.kind] = kinds.get(e.kind, 0) + 1
+# kinds is now e.g. {"poly": 3, "bug": 5}
+if kinds.get("poly", 0) &gt;= 3:
+    print("virus swarm!")</pre>
+      <p><code>kinds.get(name, 0)</code> reads a value, or 0 if it is not there yet (no <code>KeyError</code>).</p>`,
+    tasks: [{ text: 'Count something in a dictionary (<code>d[key] = d.get(key, 0) + 1</code>).', check: usesCounting, focus: g => ({ ents: turretSocks(g), code: /^def update/ }) }],
+    hint: 'kinds = {} before the loop, then kinds[e.kind] = kinds.get(e.kind, 0) + 1 inside it.',
+    solution: `    kinds = {}
+    for e in enemies:
+        kinds[e.kind] = kinds.get(e.kind, 0) + 1`,
+  },
+  {
+    title: 'Stop early: break',
+    body: `Searching does not have to look at every enemy. <code>break</code> leaves the loop as soon as you found what you need:
+<pre>target = None
+for e in enemies:              # enemies are sorted: closest to the core first
+    if e.armor &lt; 5:
+        target = e
+        break                  # found one: stop looking</pre>
+      <p>Fewer loop rounds = fewer CPU lines = more energy for shooting.</p>`,
+    tasks: [{ text: 'Use <code>break</code> inside a loop.', check: g => /^\s+break\s*$/m.test(allCode(g)), focus: g => ({ ents: turretSocks(g), code: /^def update/ }) }],
+    hint: 'for e in enemies: if (condition): target = e and then break',
+    solution: `    target = None
+    for e in enemies:
+        if e.armor < 5:
+            target = e
+            break`,
+  },
+  {
+    title: 'How much CPU is left?',
+    body: `<code>sched.spare()</code> tells how many CPU lines your turret may still use in this tick. Use it to do optional work only when there is time:
+<pre>if sched.spare() &gt; 40:
+    kinds = {}
+    for e in enemies:
+        kinds[e.kind] = kinds.get(e.kind, 0) + 1</pre>
+      <p>If code runs longer than the socket allows, the tick is cut short (<i>CPU overrun</i>). Upgrading a socket gives more CPU lines.</p>`,
+    tasks: [{ text: 'A turret checks <code>sched.spare()</code>.', check: g => anyCode(g, /sched\.spare\(\)/), focus: g => ({ ents: turretSocks(g), code: /^def update/ }) }],
+    hint: 'if sched.spare() > 40: then the optional work.',
+    solution: `    if sched.spare() > 40:
+        print(len(enemies), "enemies")`,
+  },
+  {
+    title: 'Two answers at once',
+    body: `A function can <b>return two values</b> at once, separated by a comma. You unpack them the same way:
+<pre>def pick(enemies):
+    soft = [e for e in enemies if e.armor &lt; 5]
+    if len(soft) &gt; 0:
+        return soft[0], "soft"
+    return enemies[0], "armored"
+
+target, why = pick(enemies)
+print("shooting", why)</pre>
+      <p>Put such helpers in your <b>Library</b> so every turret can use them.</p>`,
+    tasks: [{ text: 'A function returns two values and you unpack them: <code>a, b = f(...)</code>.', check: usesTuple, focus: g => ({ ents: turretSocks(g), code: /^def update/ }) }],
+    hint: 'return x, y  in the function, and  a, b = function(...)  where you call it.',
+    solution: `def pick(enemies):
+    soft = [e for e in enemies if e.armor < 5]
+    if len(soft) > 0:
+        return soft[0], "soft"
+    return enemies[0], "armored"
+
+    target, why = pick(enemies)`,
+  },
+  {
+    title: 'Final: kernel panic',
+    body: `<b>Boss: Kernel panic.</b> A huge chip with armor 4 and a shield that comes back after 2 seconds without damage. Every 6 seconds it calls in a polymorphic virus, and when it breaks it bursts into 4 more.
+      <p>Keep constant pressure on the shield, and keep some turrets free for the viruses it brings.</p>`,
+    tasks: [{ text: 'Have at least 6 turrets ready.', check: g => turretsOf(g).filter(t => t.compiled).length >= 6, focus: g => buildFocus(g, 'laser') }],
+    hint: 'Lasers ignore armor and keep the shield down; arcs and pulses clean up the viruses.',
+    solution: 'Several lasers near the merge point, plus arcs or pulses for the viruses.',
+  },
+];
+
+const EXAM5_LESSONS = [
+  {
+    title: 'Exam: three ways in',
+    body: '<b>Final exam.</b> Enemies come from the left, the right and below. One skill per wave.',
+    tasks: [{ text: 'Build at least 3 turrets.', check: g => turretsOf(g).filter(t => t.compiled).length >= 3, focus: g => buildFocus(g, 'cannon') }],
+    hint: 'Each lane needs something. The core sits in the middle.',
+    solution: 'No code: cover all three lanes near the core.',
+  },
+  {
+    title: 'Exam: shape shifters',
+    body: 'Viruses change form. Choose targets by armor.',
+    tasks: [{ text: 'A turret checks <code>.armor</code>.', check: g => anyCode(g, /\.armor\b/) }],
+    hint: 'soft = [e for e in enemies if e.armor < 5]',
+    solution: '    soft = [e for e in enemies if e.armor < 5]',
+  },
+  {
+    title: 'Exam: safe code',
+    body: 'Catch an error with try / except.',
+    tasks: [{ text: 'Use <code>try:</code> and <code>except ...:</code>.', check: usesTry }],
+    hint: 'try: risky line / except IndexError: what to do instead',
+    solution: `    try:
+        target = enemies[0]
+    except IndexError:
+        return`,
+  },
+  {
+    title: 'Exam: think less often',
+    body: 'Use the scheduler in two turrets.',
+    tasks: [{ text: 'Two turrets use <code>sched</code>.', check: g => schedUsers(g) >= 2 }],
+    hint: 'import sched, then if sched.every(5): in update().',
+    solution: '    if sched.every(5):',
+  },
+  {
+    title: 'Exam: order',
+    body: 'Sort with a key.',
+    tasks: [{ text: '<code>sorted(..., key=...)</code> or <code>.sort(key=...)</code>.', check: usesKeySort }],
+    hint: 'sorted(enemies, key=lambda e: e.hp)',
+    solution: '    order = sorted(enemies, key=lambda e: e.hp)',
+  },
+  {
+    title: 'Exam: count',
+    body: 'Count enemies by kind in a dictionary.',
+    tasks: [{ text: '<code>d[key] = d.get(key, 0) + 1</code>.', check: usesCounting }],
+    hint: 'kinds[e.kind] = kinds.get(e.kind, 0) + 1',
+    solution: `    kinds = {}
+    for e in enemies:
+        kinds[e.kind] = kinds.get(e.kind, 0) + 1`,
+  },
+  {
+    title: 'Exam: everything together',
+    body: 'Every enemy type you have met is in this wave. Use all your tools.',
+    tasks: [{ text: 'Have at least 8 turrets ready.', check: g => turretsOf(g).filter(t => t.compiled).length >= 8, focus: g => buildFocus(g, 'laser') }],
+    hint: 'Upgrade overloaded PSUs, and use Slow fields where lanes are long.',
+    solution: 'Spread turrets over all three lanes; lasers for armor, arcs for swarms.',
+  },
+  {
+    title: 'Exam: kernel panic',
+    body: '<b>The final boss.</b> Shield, armor, and a stream of viruses. Show what you have learned.',
+    tasks: [{ text: 'Have at least 10 turrets ready.', check: g => turretsOf(g).filter(t => t.compiled).length >= 10, focus: g => buildFocus(g, 'laser') }],
+    hint: 'Keep damage on the boss all the time so its shield cannot come back.',
+    solution: 'Lasers on the boss lane, arcs and pulses for the viruses it brings.',
+  },
+];
+
 const MOTHERBOARD_STARTER = g => {
   const psu = g.addEntity('psu', 1, 5);
   const sock = g.addEntity('socket', 6, 5);
@@ -1646,5 +1891,60 @@ export const MAPS = [
     unlock: { cannon: 1, pulse: 1, laser: 1, field: 1, arc: 1, upgrades: 1 }, library: true,
     goal: { text: 'Use your own class (create objects from it) and an Arc', check: g => usesObjects(g) && turretsOf(g, 'arc').length > 0 },
     starter: g => { g.addEntity('psu', 8, 5); },
+  },
+  {
+    id: 'cpu', name: 'CPU', num: 9, label: '5A',
+    desc: 'Two lanes merge before the core. Polymorphic viruses, try/except, the scheduler, sorting and counting.',
+    // top lane drops down early, bottom lane rises late: they merge at (10.5, 5.5)
+    paths: [
+      [[-0.6, 1.5], [6.5, 1.5], [6.5, 5.5], [14.6, 5.5]],
+      [[-0.6, 9.5], [10.5, 9.5], [10.5, 5.5], [14.6, 5.5]],
+    ],
+    core: { c: 14, r: 4, w: 3, h: 3 },
+    start: { credits: 550, core: 20 },
+    waves: [
+      [{ t: 'bug', n: 10, gap: 1.0, p: 0 }, { t: 'worm', n: 8, gap: 0.8, p: 1, with: true, delay: 1 }],
+      [{ t: 'poly', n: 6, gap: 1.6, p: 0 }, { t: 'bug', n: 10, gap: 0.9, p: 1, with: true }],
+      [{ t: 'poly', n: 6, gap: 1.4, p: 1 }, { t: 'forkbomb', n: 5, gap: 1.8, p: 0, with: true }, { t: 'worm', n: 12, gap: 0.5, p: 0, delay: 1 }],
+      [{ t: 'beetle', n: 5, gap: 1.8, p: 0 }, { t: 'poly', n: 8, gap: 1.2, p: 1, with: true }, { t: 'mite', n: 20, gap: 0.2, p: 0, delay: 1 }],
+      [{ t: 'leak', n: 6, gap: 1.5, p: 1 }, { t: 'router', n: 4, gap: 2, p: 0, with: true }, { t: 'poly', n: 6, gap: 1.3, p: 0, delay: 1 }],
+      [{ t: 'poly', n: 12, gap: 0.9, p: 0 }, { t: 'packet', n: 24, gap: 0.2, p: 1, with: true }, { t: 'beetle', n: 4, gap: 2, p: 1, delay: 1 }],
+      [{ t: 'router', n: 6, gap: 1.6, p: 1 }, { t: 'poly', n: 10, gap: 1.0, p: 0, with: true }, { t: 'leak', n: 6, gap: 1.4, p: 0, delay: 1 }],
+      [{ t: 'beetle', n: 7, gap: 1.5, p: 0 }, { t: 'poly', n: 12, gap: 0.9, p: 1, with: true }, { t: 'forkbomb', n: 6, gap: 1.5, p: 1, delay: 1 }],
+      [{ t: 'poly', n: 16, gap: 0.7, p: 0 }, { t: 'router', n: 6, gap: 1.5, p: 1, with: true }, { t: 'worm', n: 18, gap: 0.4, p: 0, delay: 1 }],
+      [{ t: 'kernel', n: 1, gap: 1, p: 0 }, { t: 'poly', n: 8, gap: 1.4, p: 1, with: true, delay: 3 }, { t: 'beetle', n: 6, gap: 1.8, p: 1, delay: 1 }],
+    ],
+    lessons: CPU_LESSONS,
+    hpBase: 0.9, hpGrowth: 0.13, bonus: w => 50 + 8 * w, bossMul: 0.6,
+    unlock: { cannon: 1, pulse: 1, laser: 1, field: 1, arc: 1, upgrades: 1 }, library: true,
+    goal: { text: 'Use <code>sched</code> and catch an error with <code>try</code> / <code>except</code>', check: g => schedUsers(g) >= 1 && usesTry(g) },
+    starter: g => { g.addEntity('psu', 8, 3); },
+  },
+  {
+    id: 'cpu-x', name: 'CPU · Kernel panic', num: 10, label: '5B',
+    desc: 'The final exam: enemies from the left, the right and below, and the Kernel panic boss.',
+    // the core sits in the middle: one lane from the left, one from the right, one from below
+    paths: [
+      [[-0.6, 1.5], [4.5, 1.5], [4.5, 5.5], [8.6, 5.5]],
+      [[18.6, 1.5], [14.5, 1.5], [14.5, 5.5], [10.4, 5.5]],
+      [[-0.6, 9.5], [9.5, 9.5], [9.5, 6.4]],
+    ],
+    core: { c: 8, r: 4, w: 3, h: 3 },
+    start: { credits: 600, core: 20 },
+    waves: [
+      [{ t: 'bug', n: 6, gap: 1.2, p: 0 }, { t: 'bug', n: 6, gap: 1.2, p: 1, delay: 2 }, { t: 'worm', n: 6, gap: 0.8, p: 2, delay: 2 }],
+      [{ t: 'poly', n: 6, gap: 1.5, p: 0 }, { t: 'poly', n: 6, gap: 1.5, p: 1, with: true }, { t: 'bug', n: 10, gap: 0.8, p: 2, with: true }],
+      [{ t: 'forkbomb', n: 5, gap: 1.8, p: 2 }, { t: 'poly', n: 8, gap: 1.2, p: 0, with: true }, { t: 'packet', n: 20, gap: 0.25, p: 1, delay: 1 }],
+      [{ t: 'router', n: 4, gap: 2, p: 1 }, { t: 'leak', n: 4, gap: 1.8, p: 2, with: true }, { t: 'poly', n: 6, gap: 1.3, p: 0, delay: 2 }],
+      [{ t: 'beetle', n: 5, gap: 1.8, p: 0 }, { t: 'poly', n: 8, gap: 1.2, p: 1, with: true }, { t: 'mite', n: 18, gap: 0.22, p: 2, delay: 2 }],
+      [{ t: 'poly', n: 12, gap: 0.8, p: 2 }, { t: 'router', n: 6, gap: 1.5, p: 0, with: true }, { t: 'leak', n: 6, gap: 1.4, p: 1, delay: 1 }],
+      [{ t: 'beetle', n: 6, gap: 1.6, p: 1 }, { t: 'forkbomb', n: 6, gap: 1.5, p: 0, with: true }, { t: 'poly', n: 12, gap: 0.9, p: 2, with: true }, { t: 'packet', n: 24, gap: 0.2, p: 1, delay: 1 }],
+      [{ t: 'kernel', n: 1, gap: 1, p: 0 }, { t: 'poly', n: 10, gap: 1.2, p: 1, with: true, delay: 3 }, { t: 'router', n: 5, gap: 1.8, p: 2, with: true, delay: 3 }],
+    ],
+    lessons: EXAM5_LESSONS,
+    hpBase: 0.5, hpGrowth: 0.12, bonus: w => 60 + 8 * w, bossMul: 0.4,
+    unlock: { cannon: 1, pulse: 1, laser: 1, field: 1, arc: 1, upgrades: 1 }, library: true,
+    goal: { text: 'Win with 4 different turret types and the scheduler in 2 turrets', check: g => new Set(turretsOf(g).map(t => t.type)).size >= 4 && schedUsers(g) >= 2 },
+    starter: g => { g.addEntity('psu', 9, 2); },
   },
 ];

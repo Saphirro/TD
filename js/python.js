@@ -15,7 +15,7 @@ _LIMITS = json.loads(${JSON.stringify(JSON.stringify(LIMITS))})
 _P = json.loads(${JSON.stringify(JSON.stringify(POWER))})
 _KIND_MODULES = json.loads(${JSON.stringify(JSON.stringify(KIND_MODULES))})
 _ALLOWED = {'math', 'random'}
-_ALL_MODS = {'radar', 'motor', 'cannon', 'laser', 'pulse', 'power', 'meter', 'field', 'mem', 'arc', 'net'}
+_ALL_MODS = {'radar', 'motor', 'cannon', 'laser', 'pulse', 'power', 'meter', 'field', 'mem', 'arc', 'net', 'sched'}
 _FILE = '<turret>'
 _LIB = '<lib>'
 _TRACED = (_FILE, _LIB)
@@ -245,9 +245,24 @@ class _Net(_Module):
     def channels(self):
         return list(_NET['in'].keys())
 
+_CPU = [[0], 1]   # [line counter of the running turret, its CPU limit]
+
+class _Sched(_Module):
+    """sched.tick (ticks this turret has run), sched.every(n) -> True every n-th tick, sched.spare() -> CPU lines left now."""
+    _name = 'sched'
+    @property
+    def tick(self):
+        return self._t.ticks
+    def every(self, n):
+        if isinstance(n, bool) or not isinstance(n, int) or n < 1 or n > 100:
+            raise ValueError('sched.every(n) needs a whole number from 1 to 100')
+        return self._t.ticks % n == 0
+    def spare(self):
+        return max(0, _CPU[1] - _CPU[0][0])
+
 _MOD_CLASSES = {'radar': _Radar, 'motor': _Motor, 'cannon': _Cannon,
                 'laser': _Laser, 'pulse': _Pulse, 'power': _Power, 'meter': _Meter,
-                'field': _Field, 'mem': _Mem, 'arc': _Arc, 'net': _Net}
+                'field': _Field, 'mem': _Mem, 'arc': _Arc, 'net': _Net, 'sched': _Sched}
 
 class _T:
     def __init__(self, tid, kind):
@@ -255,7 +270,7 @@ class _T:
         self.x = self.y = self.angle = 0.0
         self.energy = 0.0; self.capacity = 100.0; self.reload = 0.0; self.net = 0.0; self.trend = 0
         self.cfg = {k: float(v[2]) for k, v in _LIMITS.items()}
-        self.cmds = {}; self.out = []; self.warns = []
+        self.cmds = {}; self.out = []; self.warns = []; self.ticks = 0
         self.mods = {n: _MOD_CLASSES[n](self) for n in _KIND_MODULES[kind]}
         self.ns = None
     def warn(self, msg):
@@ -287,7 +302,7 @@ def _make_builtins(t):
     b['print'] = _print
     return b
 
-_MODULE_NAMES = {'radar', 'motor', 'cannon', 'pulse', 'laser', 'power', 'field', 'mem', 'arc', 'net'}
+_MODULE_NAMES = {'radar', 'motor', 'cannon', 'pulse', 'laser', 'power', 'field', 'mem', 'arc', 'net', 'sched'}
 _TICK_ACTIONS = {'fire', 'stop', 'aim', 'aim_at', 'scan', 'first', 'closest', 'weakest', 'strongest'}
 
 def _check_ast(tree, fname=_FILE):
@@ -378,6 +393,7 @@ def set_library(src):
 def _guarded(fn, limit):
     """Run fn while counting executed lines of turret code (the CPU budget)."""
     count = [0]
+    _CPU[0] = count; _CPU[1] = limit
     def local(frame, event, arg):
         if event == 'line':
             count[0] += 1
@@ -440,7 +456,7 @@ def run_tick(world_json):
             continue
         t.x = s['x']; t.y = s['y']; t.angle = s['angle']
         t.energy = s['energy']; t.capacity = s['capacity']; t.reload = s['reload']; t.net = s.get('net', 0.0); t.trend = s.get('trend', 0)
-        t.cmds = {}; t.out = []; t.warns = []
+        t.cmds = {}; t.out = []; t.warns = []; t.ticks += 1
         ops, over, err = _guarded(t.ns['update'], int(s['cpu']))
         res[tid] = {'cmds': t.cmds, 'out': t.out, 'ops': ops, 'over': over,
                     'error': err, 'warns': t.warns, 'cfg': t.cfg}

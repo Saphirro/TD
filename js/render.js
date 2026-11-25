@@ -177,7 +177,7 @@ export class Renderer {
     // spawn portal
     for (const P of this.g.map.paths) {
       const sp = P[0];
-    x.fillStyle = 'rgba(255,60,90,0.25)';
+      rrect(x, sp[0] > COLS / 2 ? COLS - 0.06 : -0.12, sp[1] - 0.45, 0.18, 0.9, 0.06); x.fill();   // left or right edge
       rrect(x, -0.12, sp[1] - 0.45, 0.18, 0.9, 0.06); x.fill();
     }
     this.bg = c;
@@ -197,7 +197,7 @@ export class Renderer {
       ctx.setLineDash([0.12, 0.88]); ctx.lineDashOffset = -this.t * 1.2;
       ctx.strokeStyle = g.phase === 'wave' ? 'rgba(255,90,120,0.45)' : 'rgba(94,225,255,0.3)';
       ctx.lineWidth = 0.08; ctx.lineCap = 'round'; ctx.stroke(); ctx.setLineDash([]);
-      for (const P of g.map.paths) this.drawGlow(0, P[0][1], 0.9, '#ff3c5a', 0.35 + 0.15 * Math.sin(this.t * 3));
+      for (const P of g.map.paths) this.drawGlow(P[0][0] > COLS / 2 ? COLS : 0, P[0][1], 0.9, '#ff3c5a', 0.35 + 0.15 * Math.sin(this.t * 3));
     }
 
     this.drawWires();
@@ -527,7 +527,20 @@ export class Renderer {
     this.drawGlow(e.x, e.y, r * 2.6, e.def.color, 0.28);
     ctx.save(); ctx.translate(e.x, e.y);
     if (e.type === 'rootkit') this.drawRootkit(e);
-    else {
+    else if (e.type === 'kernel') this.drawKernel(e);
+    else if (e.type === 'poly') {
+      // polymorphic virus: a spiky shape in the fast form, a plated octagon in the armored form
+      ctx.rotate(a * 0.3);
+      if (e.form === 1) {
+        poly(ctx, 8, r); ctx.fillStyle = '#1d4d3e'; ctx.fill(); ctx.strokeStyle = '#a8ffe0'; ctx.lineWidth = 0.05; ctx.stroke();
+        poly(ctx, 8, r * 0.55, Math.PI / 8); ctx.fillStyle = '#3dffb0'; ctx.fill();
+      } else {
+        ctx.beginPath();
+        for (let i = 0; i < 12; i++) { const an = i * TAU / 12, rr = i % 2 ? r * 0.55 : r * 1.1; ctx.lineTo(Math.cos(an) * rr, Math.sin(an) * rr); }
+        ctx.closePath(); ctx.fillStyle = '#3dffb0'; ctx.fill(); ctx.strokeStyle = '#0d3b2c'; ctx.lineWidth = 0.02; ctx.stroke();
+        ctx.beginPath(); ctx.arc(0, 0, r * 0.25, 0, TAU); ctx.fillStyle = '#0d3b2c'; ctx.fill();
+      }
+    } else {
       ctx.rotate(e.dir);
       if (e.type === 'bug') {
         ctx.strokeStyle = '#ff8fa3'; ctx.lineWidth = 0.025; ctx.lineCap = 'round';
@@ -643,6 +656,29 @@ export class Renderer {
     ctx.fillStyle = gr; ctx.fill();
     ctx.beginPath(); ctx.arc(0, 0, r * 0.22, 0, TAU); ctx.fillStyle = '#ff2d55'; ctx.fill();
     this.drawGlow(0, 0, r * 0.6, '#ff2d55', 0.5 + 0.3 * Math.sin(this.t * 4));
+  }
+
+  drawKernel(e) {
+    // final boss: a red chip with a cracked core and a spinning shield ring
+    const ctx = this.ctx, r = e.radius;
+    const sh = e.shieldMax ? e.shield / e.shieldMax : 0;
+    if (sh > 0) {
+      ctx.beginPath(); ctx.arc(0, 0, r * 1.3, this.t * 2, this.t * 2 + TAU * sh);
+      ctx.strokeStyle = `rgba(255,140,140,${0.4 + 0.5 * sh})`; ctx.lineWidth = 0.06; ctx.stroke();
+    }
+    ctx.strokeStyle = '#ff8a8a'; ctx.lineWidth = 0.03;
+    for (let i = -2; i <= 2; i++) for (const sd of [-1, 1]) {   // chip pins on all four sides
+      ctx.beginPath(); ctx.moveTo(i * r * 0.32, sd * r * 0.8); ctx.lineTo(i * r * 0.32, sd * r * 1.05); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(sd * r * 0.8, i * r * 0.32); ctx.lineTo(sd * r * 1.05, i * r * 0.32); ctx.stroke();
+    }
+    ctx.beginPath(); ctx.roundRect(-r * 0.8, -r * 0.8, r * 1.6, r * 1.6, 0.06);
+    ctx.fillStyle = '#2a0c0c'; ctx.fill(); ctx.strokeStyle = '#ff3b3b'; ctx.lineWidth = 0.05; ctx.stroke();
+    ctx.strokeStyle = '#ff3b3b'; ctx.lineWidth = 0.025;
+    ctx.beginPath(); ctx.moveTo(-r * 0.5, -r * 0.3); ctx.lineTo(-r * 0.1, 0); ctx.lineTo(-r * 0.3, r * 0.2); ctx.lineTo(r * 0.2, r * 0.5);
+    ctx.moveTo(r * 0.5, -r * 0.5); ctx.lineTo(r * 0.1, -r * 0.1); ctx.stroke();
+    ctx.fillStyle = '#ffb3b3'; ctx.font = `bold ${r * 0.5}px monospace`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('!', 0, 0);
+    this.drawGlow(0, 0, r * 0.7, '#ff3b3b', 0.45 + 0.3 * Math.sin(this.t * 5));
   }
 
   // ---- projectiles / beams / fx ----------------------------------------------------

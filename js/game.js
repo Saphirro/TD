@@ -601,6 +601,8 @@ export class Game {
       hp: d.hp * mul, maxHp: d.hp * mul, hp0: d.hp * mul, armor: d.armor, shield: d.shield || 0, shieldMax: d.shield || 0,
       speed: d.speed, radius: d.radius, lastHit: -9, flash: 0, anim: Math.random() * 10,
     };
+    if (d.morph) { e.form = 0; e.morphT = d.morph.every + (e.id % 3) * 0.5; Object.assign(e, d.morph.forms[0]); }
+    if (d.spawns) e.spawnT = d.spawns.every;
     this.enemies.push(e);
     return e;
   }
@@ -964,6 +966,19 @@ export class Game {
         const k = 1 + e.def.grows * dt;
         e.maxHp *= k; e.hp *= k;
         e.radius = Math.min(e.def.radius * 1.7, e.radius * (1 + e.def.grows * dt * 0.25));
+      }
+      // polymorphic virus: switches between its forms (armor + speed) every few seconds
+      if (e.def.morph && (e.morphT -= dt) <= 0) {
+        e.form = (e.form + 1) % e.def.morph.forms.length;
+        Object.assign(e, e.def.morph.forms[e.form]);
+        e.morphT = e.def.morph.every;
+        this.fx.push({ type: 'ring', x: e.x, y: e.y, t: 0, life: 0.3, r: 0.5, color: e.def.color });
+      }
+      // the final boss calls in helpers while it walks
+      if (e.def.spawns && (e.spawnT -= dt) <= 0) {
+        e.spawnT = e.def.spawns.every;
+        this.spawn(e.def.spawns.type, this.waveHpMul || 1, e.lane, Math.max(0, e.dist - 0.4));
+        this.fx.push({ type: 'ring', x: e.x, y: e.y, t: 0, life: 0.5, r: 1, color: e.def.color });
       }
       e.dist += e.speed * mul * dt;
       e.flash = Math.max(0, e.flash - dt);

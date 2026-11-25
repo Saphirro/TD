@@ -44,8 +44,11 @@ export async function run(opts = {}) {
   ui.userPaused = true;
   const code = opts.code || {};
   const sockets = () => g.sockets();
-  const coverage = (c, r, R) => { let n = 0; g.paths.forEach((P, lane) => { for (let d = 0; d < P.len; d += 0.25) { const p = g.posAt(d, lane); if (Math.hypot(p.x - c - 0.5, p.y - r - 0.5) <= R) n++; } }); return n * 0.25; };
-  const spots = R => { const out = []; for (let r = 0; r < g.grid.length; r++) for (let c = 0; c < g.grid[0].length; c++) if (g.canPlace(c, r)) out.push({ c, r, cov: coverage(c, r, R) }); return out.sort((a, b) => b.cov - a.cov); };
+  // coverage of one lane from a tile; a lane that no turret covers yet counts triple, so bots never leave a lane bare
+  const laneCov = (c, r, R, lane) => { const P = g.paths[lane]; let n = 0; for (let d = 0; d < P.len; d += 0.25) { const p = g.posAt(d, lane); if (Math.hypot(p.x - c - 0.5, p.y - r - 0.5) <= R) n++; } return n * 0.25; };
+  const bareLanes = () => g.paths.map((P, lane) => !sockets().some(s => s.turret && laneCov(s.c, s.r, s.turret.cfg?.range || 3, lane) > 0));
+  const coverage = (c, r, R, bare = g.paths.map(() => false)) => g.paths.reduce((a, P, lane) => a + laneCov(c, r, R, lane) * (bare[lane] ? 3 : 1), 0);
+  const spots = R => { const bare = sockets().some(s => s.turret) ? bareLanes() : g.paths.map(() => false); const out = []; for (let r = 0; r < g.grid.length; r++) for (let c = 0; c < g.grid[0].length; c++) if (g.canPlace(c, r)) out.push({ c, r, cov: coverage(c, r, R, bare) }); return out.sort((a, b) => b.cov - a.cov); };
   const freePort = () => g.psus().find(p => p.outputs.length < 4);
 
   if (g.ents.get(2)?.turret) g.compileTurret(g.ents.get(2), code.cannon || TEMPLATES.cannon);
