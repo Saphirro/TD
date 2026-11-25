@@ -81,6 +81,7 @@ export class Game {
     for (let r = C.r; r < C.r + C.h; r++) for (let c = C.c; c < C.c + C.w; c++) this.blocked[r][c] = 'core';
 
     this.syncLibrary();
+    if (this.py.ready) this.py.resetShared();   // mem notebook starts empty
     if (withStarter) M.starter(this);   // e.g. map 1: PSU -> socket -> cannon with unfinished code
     this.emit('change');
   }
@@ -597,7 +598,7 @@ export class Game {
     const p = this.posAt(dist, lane);
     const e = {
       id: this.nextEnemyId++, type, def: d, dist, lane, x: p.x, y: p.y, vx: 0, vy: 0, dir: Math.atan2(p.dy, p.dx),
-      hp: d.hp * mul, maxHp: d.hp * mul, armor: d.armor, shield: d.shield || 0, shieldMax: d.shield || 0,
+      hp: d.hp * mul, maxHp: d.hp * mul, hp0: d.hp * mul, armor: d.armor, shield: d.shield || 0, shieldMax: d.shield || 0,
       speed: d.speed, radius: d.radius, lastHit: -9, flash: 0, anim: Math.random() * 10,
     };
     this.enemies.push(e);
@@ -786,6 +787,16 @@ export class Game {
       }
     }
 
+    if (t.type === 'field') {
+      // Slow field: costs slow x fieldWPerPct watts while switched on
+      t.fieldActive = false;
+      if (t.fieldOn) {
+        const need = cfg.slow * POWER.fieldWPerPct * dt;
+        if (s.energy >= need) { this.drain(s, need); t.fieldActive = true; }
+        else this.starve(t, cfg.slow * POWER.fieldWPerPct);
+      }
+    }
+
     if (t.type === 'laser') {
       t.laserOn = false; t.laserHit = null;
       if (t.laserId != null && this.time < t.laserUntil) {
@@ -852,6 +863,7 @@ export class Game {
     if ('aim_at' in c) { t.aimPt = { x: c.aim_at[0], y: c.aim_at[1] }; t.aimId = null; }
     if (c.fire && t.type === 'cannon') this.fireCannon(s, t);
     if (c.pulse && t.type === 'pulse') this.firePulse(s, t);
+    if ('field' in c && t.type === 'field') t.fieldOn = !!c.field;
     if ('laser' in c && t.type === 'laser') {
       if (c.laser == null) t.laserId = null;
       else { t.laserId = c.laser; t.laserUntil = this.time + 0.16; }
@@ -912,8 +924,20 @@ export class Game {
   }
 
   enemyStep(dt) {
+    // active slow fields (on, powered) and how much they slow
+    const fields = this.sockets().filter(s => s.turret?.type === 'field' && s.turret.fieldActive && !s.offline)
+      .map(s => ({ x: s.x, y: s.y, r: s.turret.cfg.range, k: 1 - s.turret.cfg.slow / 100 }));
     for (const e of this.enemies) {
-      e.dist += e.speed * dt;
+      let mul = 1;
+      for (const f of fields) if (Math.hypot(e.x - f.x, e.y - f.y) <= f.r + e.radius) mul = Math.min(mul, f.k);
+      e.slowed = mul < 1;
+      // memory leaks (and the Stack overflow boss) grow while they are alive
+      if (e.def.grows && e.maxHp < e.hp0 * (e.def.growCap || 3)) {   // grows up to growCap x its starting health
+        const k = 1 + e.def.grows * dt;
+        e.maxHp *= k; e.hp *= k;
+        e.radius = Math.min(e.def.radius * 1.7, e.radius * (1 + e.def.grows * dt * 0.25));
+      }
+      e.dist += e.speed * mul * dt;
       e.flash = Math.max(0, e.flash - dt);
       e.anim += dt * e.speed * 6;
       if (e.shieldMax && this.time - e.lastHit > 2) e.shield = Math.min(e.shieldMax, e.shield + e.def.shieldRegen * dt);
@@ -926,7 +950,7 @@ export class Game {
         continue;
       }
       const p = this.posAt(e.dist, e.lane);
-      e.x = p.x; e.y = p.y; e.vx = p.dx * e.speed; e.vy = p.dy * e.speed;
+      e.x = p.x; e.y = p.y; e.vx = p.dx * e.speed * mul; e.vy = p.dy * e.speed * mul;   // real velocity (slowed too)
       const want = Math.atan2(p.dy, p.dx);
       e.dir += angDiff(want, e.dir) * Math.min(1, dt * 10);
     }
@@ -1012,6 +1036,7 @@ export class Game {
       rows.push(['Pulsing nonstop', j / TURRETS.pulse.reload, 'W', `${j.toFixed(1)} J / 1.4 s`]);
     }
     if (t.type === 'laser') rows.push(['Laser (while firing)', c.power, 'W', `${(c.power * POWER.laserDpsPerW).toFixed(1)} dmg/s`]);
+if (t.type === 'field') rows.push(['Slow field (while on)', c.slow * POWER.fieldWPerPct, 'W', `${c.slow}% slower × ${POWER.fieldWPerPct}`]);
     const peak = rows.filter(r => r[2] === 'W').reduce((a, r) => a + r[1], 0);
     return { rows, peak };
   }

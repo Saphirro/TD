@@ -430,6 +430,28 @@ export class Renderer {
       if (alive) this.drawGlow(s.x, s.y, 0.25 + 0.15 * charge + t.pulseT, col, 0.4 + 0.5 * charge);
       return;
     }
+    if (t.type === 'field') {
+      // Slow field: a dish of three emitters; when active, a frosty zone covers its radar range
+      const on = alive && t.fieldActive;
+      ctx.restore();
+      if (on) {
+        ctx.beginPath(); ctx.arc(s.x, s.y, t.cfg.range, 0, TAU);
+        ctx.fillStyle = 'rgba(122,215,255,0.07)'; ctx.fill();
+        ctx.setLineDash([0.12, 0.1]); ctx.lineDashOffset = -this.t * 0.3;
+        ctx.strokeStyle = 'rgba(122,215,255,0.35)'; ctx.lineWidth = 0.03; ctx.stroke(); ctx.setLineDash([]);
+      }
+      ctx.save(); ctx.translate(s.x, s.y);
+      poly(ctx, 6, 0.29, 0);
+      ctx.fillStyle = '#152430'; ctx.fill(); ctx.lineWidth = 0.025; ctx.strokeStyle = col + '99'; ctx.stroke();
+      ctx.rotate(this.t * (on ? 0.8 : 0.1));
+      for (let i = 0; i < 3; i++) {
+        ctx.rotate(TAU / 3);
+        ctx.beginPath(); ctx.arc(0.15, 0, 0.065, 0, TAU); ctx.fillStyle = on ? '#bfeeff' : '#3b5566'; ctx.fill();
+      }
+      ctx.restore();
+      if (on) this.drawGlow(s.x, s.y, 0.35, col, 0.6);
+      return;
+    }
     // laser
     ctx.beginPath(); ctx.arc(0, 0, 0.27, 0, TAU);
     ctx.fillStyle = '#231822'; ctx.fill(); ctx.lineWidth = 0.025; ctx.strokeStyle = col + '88'; ctx.stroke();
@@ -537,6 +559,17 @@ export class Renderer {
         ctx.fillStyle = gr; ctx.fill(); ctx.strokeStyle = '#ffb37a'; ctx.lineWidth = 0.02; ctx.stroke();
         ctx.strokeStyle = '#3a1200'; ctx.lineWidth = 0.03; ctx.lineCap = 'round';
         ctx.beginPath(); ctx.moveTo(-r * 0.3, 0); ctx.lineTo(r * 0.3, 0); ctx.moveTo(0, 0); ctx.lineTo(r * 0.25, -r * 0.3); ctx.moveTo(0, 0); ctx.lineTo(r * 0.25, r * 0.3); ctx.stroke();
+      } else if (e.type === 'leak' || e.type === 'overflow') {
+        // memory leak: a wobbling blob that swells as it grows; the overflow boss has a stacked core
+        const wob = Math.sin(a * 1.3) * 0.04;
+        ctx.beginPath(); ctx.ellipse(0, 0, r * (1 + wob), r * (1 - wob), 0, 0, TAU);
+        const gr = ctx.createRadialGradient(-r * 0.3, -r * 0.3, 0.01, 0, 0, r);
+        gr.addColorStop(0, '#ffd1ec'); gr.addColorStop(0.6, e.def.color); gr.addColorStop(1, '#5a0f3a');
+        ctx.fillStyle = gr; ctx.fill(); ctx.strokeStyle = '#ffb3de'; ctx.lineWidth = 0.02; ctx.stroke();
+        for (let i = 0; i < (e.type === 'overflow' ? 4 : 2); i++) {
+          ctx.fillStyle = 'rgba(40,0,20,0.55)';
+          ctx.fillRect(-r * 0.45, -r * 0.5 + i * r * 0.28, r * 0.9, r * 0.16);   // "stack frames"
+        }
       } else if (e.type === 'beetle') {
         ctx.strokeStyle = '#2f435a'; ctx.lineWidth = 0.035; ctx.lineCap = 'round';
         for (let i = -1; i <= 1; i++) for (const sd of [-1, 1]) {
@@ -553,6 +586,7 @@ export class Renderer {
       }
     }
     ctx.restore();
+    if (e.slowed) this.drawGlow(e.x, e.y, r * 1.8, '#7ad7ff', 0.35);   // inside a slow field
     if (e.flash > 0) this.drawGlow(e.x, e.y, r * 1.6, '#ffffff', e.flash * 5);
     // health
     if (e.hp < e.maxHp || e.shield > 0) {

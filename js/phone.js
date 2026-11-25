@@ -164,7 +164,7 @@ export function installPhone(ui) {
       for (const [k, d] of Object.entries(TURRETS)) {
         const locked = !g.isUnlocked(k);
         if (locked) continue;   // appears in the wave its lesson introduces it
-        items.push({ icon: { cannon: '◎', pulse: '◉', laser: '✷' }[k], label: d.name, cost: locked ? `W${g.unlockWave(k)}` : d.cost, tool: k,
+        items.push({ icon: { cannon: '◎', pulse: '◉', laser: '✷', field: '❄' }[k], label: d.name, cost: locked ? `W${g.unlockWave(k)}` : d.cost, tool: k,
           disabled: locked || g.credits < d.cost, why: locked ? `${d.name} unlocks at wave ${g.unlockWave(k)}.` : `Need ${d.cost} credits.`,
           fn: () => { const t = g.buildTurret(k, e); if (t) { ui.select(e.id); ui.copyNote(t); } } });
       }

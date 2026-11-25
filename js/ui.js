@@ -18,6 +18,7 @@ const ICONS = {
   cannon: SVG('<circle cx="9" cy="14" r="5"/><path d="M12 11l8-6M13 13l8-5"/>'),
   pulse: SVG('<circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="6.5" stroke-dasharray="3 2"/><circle cx="12" cy="12" r="10" opacity=".5"/>'),
   laser: SVG('<path d="M4 18l5-5"/><path d="M9 13l3-6 3 3-6 3z"/><path d="M14 9l7-7" stroke-width="2.5"/>'),
+  field: SVG('<path d="M12 2v20M3.5 7l17 10M20.5 7l-17 10"/><circle cx="12" cy="12" r="3"/>'),
   sell: SVG('<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>'),
 };
 const TOOLS = [
@@ -29,6 +30,7 @@ const TOOLS = [
   { id: 'cannon', label: 'Cannon', key: '6', cost: TURRETS.cannon.cost, turret: true },
   { id: 'pulse', label: 'Pulse', key: '7', cost: TURRETS.pulse.cost, turret: true },
   { id: 'laser', label: 'Laser', key: '8', cost: TURRETS.laser.cost, turret: true },
+  { id: 'field', label: 'Slow field', key: '0', cost: TURRETS.field.cost, turret: true },
   { id: 'sell', label: 'Sell', key: '9' },
 ];
 const TOOL_TIPS = {
@@ -40,6 +42,7 @@ const TOOL_TIPS = {
   cannon: TURRETS.cannon.desc + ' Tap a socket.',
   pulse: TURRETS.pulse.desc + ' Tap a socket.',
   laser: TURRETS.laser.desc + ' Tap a socket.',
+  field: TURRETS.field.desc + ' Tap a socket.',
   sell: 'Tap a part to sell it for 60% of its cost.',
 };
 

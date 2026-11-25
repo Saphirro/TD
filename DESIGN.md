@@ -160,3 +160,10 @@ Permanent but **small** boosts. All of them together cost **35 stars**; 6 exist 
 - **1B Motherboard · Overclock** (`motherboard-x`): 8 waves, one skill check per wave (careful cannons, in_range again, pulse discipline, power plan, laser + power, beetles first, lead the target, Rootkit). ★★★: no turret ever browned out. Bots: learner wins (core 8/20), others lose at waves 6-8.
 - **2B Graphics card · Render farm** (`gpu-x`): 8 waves, two lanes that merge late, Library checks (lib everywhere, True/False helper, dictionary, sorted, defaults, f-string, 3 helpers). ★★★: every turret uses lib and the Library has 3+ functions. `bossMul: 0.7` (new per-map boss strength) because towers spread over two separate lanes. Bots: learner wins (core 8/20), others lose at waves 6-7.
 - Campaign order: 1A → 1B → 2A → 2B (each unlocks the next; "Play anyway" still works). Cards show labels like "1B".
+
+### Chapter 3 complete (2026-11-25): RAM
+- New module **`mem`** (shared notebook for all turrets: write/read/keys/clear; needs a module slot; emptied when a map starts).
+- New turret **Slow field** (`field`): `field.on()/off()`, setting `field.slow` 10-60 %, uses slow × 0.45 W while on, no damage; enemies inside move slower (also their reported vx/vy).
+- New enemies: **Memory leak** (grows 10 %/s up to 3× its starting health) and boss **Stack overflow** (grows up to 1.5×, bursts into 4 leaks). Growth caps use `growCap`.
+- **3A RAM** (`ram`, 10 waves, ring path around a central CPU): append, Slow field, `in`, mem, while, leaks first, list comprehensions, modes, slices, boss. ★★★: two turrets share info via mem. Bots: learner wins (core 8/20), others lose.
+- **3B RAM · Garbage collector** (`ram-x`, 8 waves, two merging lanes): exam. ★★★: use a Slow field and never brown out. Bots: learner wins (12/20), others lose.

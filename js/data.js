@@ -34,6 +34,7 @@ export const POWER = {
   pulseBase: 2,        // pulse J = strength x (2 + 0.5 x range^2)
   pulseRangeK: 0.5,
   pulseSurgeJ: 15,     // a pulse that hits 0-1 enemies drains this from every other socket on its PSU
+  fieldWPerPct: 0.45,  // Slow field uses slow x 0.45 W while on (30 % = 13.5 W)
   brownoutResume: 0.25 // turret restarts at 25% charge
 };
 
@@ -44,6 +45,7 @@ export const LIMITS = {
   damage: [1, 60, 10],
   power: [1, 80, 20],
   strength: [1, 40, 8],
+  slow: [10, 60, 30],      // Slow field: % slower for enemies inside it
 };
 
 export const BUILDINGS = {
@@ -73,7 +75,7 @@ export function labBoost(levels = {}) {
   return { library: 1 + l('library'), core: 2 * l('core'), slots: l('slots'), psuW: 10 * l('psu'), wireA: l('wire'),
     credits: 20 * l('budget'), bonusPct: 0.05 * l('bonus'), chargeW: 5 * l('charge') };
 }
-export const EXTRA_MODULES = ['power', 'meter', 'lib'];   // need a free module slot on the socket
+export const EXTRA_MODULES = ['power', 'meter', 'lib', 'mem'];   // need a free module slot on the socket
 export const UPGRADES = {
   psu: [{ maxW: 100 }, { maxW: 140, cost: 60 }, { maxW: 180, cost: 90 }],
   // slots = extra modules a turret program may import (power, meter, lib); radar, motor and the weapon are always free
@@ -83,18 +85,23 @@ export const UPGRADES = {
 export const TURRETS = {
   cannon: {
     name: 'Cannon', cost: 60, unlock: 1, reload: 0.7, shellSpeed: 18,
-    modules: ['radar', 'motor', 'cannon', 'power', 'meter'], color: '#5ee1ff',
+    modules: ['radar', 'motor', 'cannon', 'power', 'meter', 'mem'], color: '#5ee1ff',
     desc: 'Fires shells in the direction it faces. Needs aiming.',
   },
   pulse: {
     name: 'Pulse', cost: 80, unlock: 5, reload: 1.4,
-    modules: ['radar', 'pulse', 'power', 'meter'], color: '#ffcf4a',
+    modules: ['radar', 'pulse', 'power', 'meter', 'mem'], color: '#ffcf4a',
     desc: 'Shockwave that hits every enemy in radar range.',
   },
   laser: {
     name: 'Laser', cost: 100, unlock: 8,
-    modules: ['radar', 'motor', 'laser', 'power', 'meter'], color: '#ff5ea8',
+    modules: ['radar', 'motor', 'laser', 'power', 'meter', 'mem'], color: '#ff5ea8',
     desc: 'Continuous beam. Ignores armor, drains watts while firing.',
+  },
+  field: {
+    name: 'Slow field', cost: 70, unlock: 99,
+    modules: ['radar', 'field', 'power', 'meter', 'mem'], color: '#7ad7ff',
+    desc: 'Slows every enemy in radar range while it is on. Uses watts while on, does no damage.',
   },
 };
 
@@ -104,6 +111,8 @@ export const ENEMIES = {
   mite:    { name: 'Mite',    hp: 7,   speed: 1.5,  radius: 0.15, reward: 1,   dmg: 1,  armor: 0, color: '#ffd23f', desc: 'Tiny. Comes in swarms.' },
   beetle:  { name: 'Beetle',  hp: 90,  speed: 0.8,  radius: 0.34, reward: 10,  dmg: 2,  armor: 6, color: '#7fa6cf', desc: 'Armor 6: every hit does 6 less damage.' },
   forkbomb: { name: 'Forkbomb', hp: 55, speed: 0.95, radius: 0.3, reward: 5, dmg: 2, armor: 0, splits: { type: 'mite', n: 3 }, color: '#ff8a3d', desc: 'Splits into 3 mites when destroyed.' },
+  leak:    { name: 'Memory leak', hp: 50, speed: 0.85, radius: 0.27, reward: 7, dmg: 2, armor: 0, grows: 0.10, growCap: 3, color: '#ff66cc', desc: 'Grows: gains 10% health every second it is alive (up to 3x). Kill it early.' },
+  overflow: { name: 'Stack overflow', hp: 1600, speed: 0.4, radius: 0.5, reward: 120, dmg: 10, armor: 2, grows: 0.025, growCap: 1.5, boss: true, splits: { type: 'leak', n: 4 }, color: '#ff3fa4', desc: 'Boss. Grows slowly (up to 1.5x) and bursts into 4 memory leaks.' },
   rootkit: { name: 'Rootkit', hp: 1400, speed: 0.45, radius: 0.5,  reward: 100, dmg: 10, armor: 3, shield: 300, shieldRegen: 20, boss: true, color: '#b15cff', desc: 'Boss. Shield regenerates after 2 s without damage.' },
 };
 
@@ -212,6 +221,21 @@ def update():
         laser.fire(target)   # must be called every tick to keep the beam on
     else:
         laser.stop()
+`,
+  field: `import radar, field
+
+def setup():
+    # Runs once when you press Upload.
+    radar.range = 2.5     # tiles (1 to 6): enemies inside this circle are slowed. Radar: 0.3 x range² W
+    field.slow = 30       # percent slower (10 to 60). Power: slow x 0.45 W while the field is on
+
+def update():
+    # Runs 10 times every second.
+    enemies = radar.scan()
+    if len(enemies) > 0:
+        field.on()        # slow everything in range
+    else:
+        field.off()       # nobody here: save the power
 `,
 };
 
@@ -599,6 +623,22 @@ export const DOCS = {
 <tr><td><code>power.capacity</code></td><td>Max energy (J).</td></tr>
 <tr><td><code>power.percent</code></td><td>0–100.</td></tr>
 </table>`,
+  field: `<h3>field (Slow field turret)</h3>
+<p><b>Setting</b> <code>field.slow</code> 10–60 (default 30): how many percent slower enemies inside <code>radar.range</code> move. Does no damage. While on it uses <code>slow × 0.45</code> W (30 % = 13.5 W).</p>
+<table>
+<tr><td><code>field.on()</code></td><td>Switch the field on (it stays on until <code>field.off()</code>).</td></tr>
+<tr><td><code>field.off()</code></td><td>Switch it off to save power.</td></tr>
+<tr><td><code>field.cost()</code></td><td>Watts it uses while on.</td></tr>
+</table>`,
+  mem: `<h3>mem (shared memory)</h3>
+<p>One notebook that <b>every turret</b> on the map can read and write. Needs a module slot. It is emptied when a map starts.</p>
+<table>
+<tr><td><code>mem.write(key, value)</code></td><td>Store a value under a name, e.g. <code>mem.write("boss", target.id)</code>.</td></tr>
+<tr><td><code>mem.read(key, default)</code></td><td>Read it back; gives <code>default</code> (or None) if nothing is stored.</td></tr>
+<tr><td><code>mem.keys()</code></td><td>List of all names in the notebook.</td></tr>
+<tr><td><code>mem.clear(key)</code></td><td>Remove one name.</td></tr>
+</table>
+<p>Values are written during a turret's <code>update()</code>, so another turret may see them one tick later.</p>`,
   meter: `<h3>meter</h3>
 <p>An energy meter. Just add it to the import line (<code>import radar, motor, cannon, meter</code>) and a small badge appears on the tower. <b>It uses no power.</b> Left half: the arrow below. Right half: the <b>worst case</b>: a bar of the power this turret would use with everything flat out (firing nonstop, turning, radar, code) compared with the power it would still get if every socket on its wires and PSU charged at once. Green up to 100%: it can run flat out forever. Yellow up to 150%: the capacitor covers bursts, but nonstop firing slowly drains it. Red (blinking) above: it cannot keep up under full load. The Power tab shows the exact numbers.</p>
 <table>
@@ -911,6 +951,258 @@ const EXAM2_LESSONS = [
   },
 ];
 
+// ---------------------------------------------------------------------------
+// Chapter 3: RAM (lists in depth, while, list comprehensions, modes, mem, Slow field, memory leaks)
+// ---------------------------------------------------------------------------
+const memWriters = g => turretsOf(g).filter(t => t.compiled && /mem\.write\(/.test(t.code)).length;
+const memReaders = g => turretsOf(g).filter(t => t.compiled && /mem\.read\(/.test(t.code)).length;
+
+const RAM_LESSONS = [
+  {
+    title: 'Lists that grow',
+    body: `Welcome to the <b>RAM</b>: the computer's working memory. Here you learn to work with lists properly.
+      <p>A list can grow while the program runs. <code>append</code> adds an item at the end:</p>
+<pre>names = []                 # an empty list
+names.append("bug")
+names.append("worm")
+print(names)               # ['bug', 'worm']
+print(len(names))          # 2</pre>
+      <p>Idea for your turret: collect the enemies you are allowed to shoot (for example only the close ones) in a new list, then pick from that list.</p>`,
+    tasks: [
+      { text: 'Build at least 2 turrets.', check: g => turretsOf(g).filter(t => t.compiled).length >= 2, focus: g => buildFocus(g, 'cannon') },
+      { text: 'Use <code>.append(</code> in a turret or in your Library to build a list.', check: g => /\.append\(/.test(allCode(g)), focus: g => ({ ents: turretSocks(g), code: /enemies\s*=/ }) },
+    ],
+    hint: 'close = [] then for e in enemies: if e.distance < 2.5: close.append(e)',
+    solution: `    close = []
+    for e in enemies:
+        if e.distance < 2.5:
+            close.append(e)
+    if len(close) == 0:
+        return
+    target = close[0]`,
+  },
+  {
+    title: 'New: Slow field',
+    body: `<b>New turret: Slow field.</b> It does no damage, but every enemy inside its circle moves slower, so your other turrets get more time to shoot.
+      <ul><li><code>field.on()</code> and <code>field.off()</code> switch it.</li>
+      <li><code>field.slow</code> (10 to 60) is how many percent slower.</li>
+      <li>While on it uses <code>slow × 0.45</code> W, so switch it off when nothing is near.</li></ul>
+      <p>Fast <b>worms</b> are coming: a field in front of your cannons helps a lot.</p>`,
+    tasks: [
+      { text: 'Build a <b>Slow field</b> next to your other turrets.', check: g => turretsOf(g, 'field').length > 0, focus: g => buildFocus(g, 'field') },
+    ],
+    hint: 'Put the field where the path passes your cannons. Its template already switches off when nothing is in range.',
+    solution: 'No new code: the Slow field template turns on when enemies are in range and off when not.',
+  },
+  {
+    title: 'Is it in the list?',
+    body: `<code>in</code> asks "is this value one of the items in the list?" and answers True or False:
+<pre>tough = ["beetle", "forkbomb"]
+if "beetle" in tough:
+    print("yes")         # prints yes</pre>
+      <p>That makes rules short: <code>if e.kind in tough:</code> is true for beetles <i>and</i> forkbombs.</p>`,
+    tasks: [
+      { text: 'Use <code>in</code> inside an <code>if</code> to check a value against a list (for example enemy kinds).', check: g => /\bif\s+[^\n]*\s\bin\s+[\[\w]/.test(allCode(g)), focus: g => ({ ents: turretSocks(g, 'cannon'), code: /target\s*=/ }) },
+    ],
+    hint: 'for e in enemies: if e.kind in ["beetle", "forkbomb"]: target = e',
+    solution: `    target = enemies[0]
+    for e in enemies:
+        if e.kind in ["beetle", "forkbomb"]:
+            target = e
+            break`,
+  },
+  {
+    title: 'Shared memory: mem',
+    body: `<b>New module: mem.</b> Until now every turret had its own memory. <code>mem</code> is one notebook that <b>all</b> turrets share (it needs a module slot):
+<pre>import radar, mem
+mem.write("danger", 5)          # one turret writes
+x = mem.read("danger", 0)       # any turret reads it (0 if nothing written)</pre>
+      <p>Idea: a turret near the start of the path writes how many enemies it sees, and a pulse near the core reads it to get ready.</p>`,
+    tasks: [
+      { text: 'One turret uses <code>mem.write(...)</code> and another one uses <code>mem.read(...)</code>.', check: g => memWriters(g) >= 1 && memReaders(g) >= 1 && turretsOf(g).filter(t => /mem\.(read|write)\(/.test(t.code)).length >= 2, focus: g => ({ ents: turretSocks(g), code: /^import / }) },
+    ],
+    hint: 'Add mem to the import lines. Writer: mem.write("seen", len(enemies)). Reader: if mem.read("seen", 0) >= 3: ...',
+    solution: `# turret A
+    mem.write("seen", len(enemies))
+# turret B
+    if mem.read("seen", 0) >= 3:
+        pulse.fire()`,
+  },
+  {
+    title: 'while loops',
+    body: `A <code>for</code> loop walks through a list. A <code>while</code> loop repeats <b>as long as a condition is True</b>:
+<pre>i = 0
+while i < 3:
+    print(i)       # 0, 1, 2
+    i = i + 1      # without this line the loop never ends!</pre>
+      <p>Careful: a loop that never ends uses up the socket's CPU lines (you'll see "CPU overrun"). Always change something the condition checks.</p>`,
+    tasks: [
+      { text: 'Use a <code>while</code> loop in a turret or in your Library.', check: g => /\bwhile\b/.test(allCode(g)), focus: g => ({ ents: turretSocks(g, 'cannon'), code: /target\s*=/ }) },
+    ],
+    hint: 'i = 0, then while i < len(enemies) and enemies[i].kind == "mite": i = i + 1 skips the mites at the front.',
+    solution: `    i = 0
+    while i < len(enemies) - 1 and enemies[i].kind == "mite":
+        i = i + 1
+    target = enemies[i]`,
+  },
+  {
+    title: 'Memory leaks!',
+    body: `<b>New enemy: memory leak.</b> It gains 10 % health <b>every second</b> it is alive (up to 3 times its starting health), so a leak you ignore becomes tough. Kill them first, while they are small.
+      <p>Use what you know: pick leaks first (<code>e.kind == "leak"</code>), and slow them down so they don't reach the core.</p>`,
+    tasks: [
+      { text: 'A turret picks memory leaks first (<code>"leak"</code>).', check: g => /["']leak["']/.test(allCode(g)), focus: g => ({ ents: turretSocks(g, 'cannon'), code: /target\s*=/ }) },
+    ],
+    hint: 'for e in enemies: if e.kind == "leak": target = e and break.',
+    solution: `    target = enemies[0]
+    for e in enemies:
+        if e.kind == "leak":
+            target = e
+            break`,
+  },
+  {
+    title: 'List comprehensions',
+    body: `Building a list with a loop is so common that Python has a short form for it, a <b>list comprehension</b>:
+<pre>numbers = [1, 5, 8, 2]
+big = [n for n in numbers if n > 4]     # [5, 8]
+double = [n * 2 for n in numbers]       # [2, 10, 16, 4]</pre>
+      <p>Read it as: "<i>n</i>, for every <i>n</i> in numbers, if <i>n</i> > 4". It does the same as the <code>append</code> loop from lesson 1, in one line.</p>`,
+    tasks: [
+      { text: 'Use a list comprehension (<code>[x for x in ... ]</code>).', check: g => /\[\s*[^\]\n]*\bfor\s+\w+\s+in\s+[^\]\n]+\]/.test(allCode(g)), focus: g => ({ ents: turretSocks(g), code: /\.append\(/ }) },
+    ],
+    hint: 'close = [e for e in enemies if e.distance < 2.5]',
+    solution: `    close = [e for e in enemies if e.distance < 2.5]`,
+  },
+  {
+    title: 'Modes',
+    body: `Sometimes a turret should behave differently depending on the situation. Keep the situation in a variable, a <b>mode</b>:
+<pre>mode = "save"                 # outside the functions: remembered
+
+def update():
+    global mode
+    if power.percent > 80:
+        mode = "attack"
+    if power.percent < 30:
+        mode = "save"
+    if mode == "attack":
+        ...</pre>
+      <p>Using two thresholds (80 and 30) stops the turret from flipping back and forth every tick.</p>`,
+    tasks: [
+      { text: 'Use a mode: a string variable that your code compares, e.g. <code>mode == "attack"</code>.', check: g => /\b\w+\s*==\s*["'](attack|save|hunt|calm|defend|idle|charge|\w+)["']/.test(allCode(g)) && /\bglobal\s+\w+/.test(allCode(g)), focus: g => ({ ents: turretSocks(g), code: /^def update/ }) },
+    ],
+    hint: 'mode = "save" at the top, global mode inside update(), switch it with two different power levels.',
+    solution: `mode = "save"
+
+def update():
+    global mode
+    if power.percent > 80:
+        mode = "attack"
+    if power.percent < 30:
+        mode = "save"`,
+  },
+  {
+    title: 'Slices',
+    body: `A <b>slice</b> takes a part of a list: <code>list[start:end]</code> (the end is not included):
+<pre>letters = ["a", "b", "c", "d", "e"]
+letters[:2]      # ['a', 'b']        the first two
+letters[1:3]     # ['b', 'c']
+letters[-2:]     # ['d', 'e']        the last two</pre>
+      <p>Idea: <code>enemies[:3]</code> is "the 3 closest to the core". A pulse could look only at those.</p>`,
+    tasks: [
+      { text: 'Use a slice (<code>list[a:b]</code>) somewhere in your code.', check: g => /\w\s*\[\s*-?\d*\s*:\s*-?\d*\s*\]/.test(allCode(g)), focus: g => ({ ents: turretSocks(g), code: /enemies/ }) },
+    ],
+    hint: 'front = enemies[:3] gives at most the first three (no error if there are fewer).',
+    solution: `    front = enemies[:3]`,
+  },
+  {
+    title: 'Final: Stack overflow',
+    body: `The <b>Stack overflow</b> boss: huge, slowly growing, and when it bursts it releases 4 memory leaks. Slow it, focus it, and be ready for the leaks.`,
+    tasks: [{ text: 'Survive wave 10.', check: null }],
+    hint: 'A Slow field near the end of the path plus lasers (no armor problems) wear it down. Keep pulses for the leaks it drops.',
+    solution: 'Fields at the last bend, lasers that prefer "overflow", pulses for the leaks.',
+  },
+];
+
+const EXAM3_LESSONS = [
+  {
+    title: 'Exam: lists',
+    body: '<b>RAM exam.</b> Everything from chapter 3, one skill per wave. Build up and use <code>append</code>.',
+    tasks: [
+      { text: 'Build at least 3 turrets.', check: g => turretsOf(g).filter(t => t.compiled).length >= 3, focus: g => buildFocus(g, 'cannon') },
+      { text: 'Use <code>.append(</code>.', check: g => /\.append\(/.test(allCode(g)) },
+    ],
+    hint: 'close = [] and close.append(e) inside a for loop.',
+    solution: `    close = []
+    for e in enemies:
+        if e.distance < 2.5:
+            close.append(e)`,
+  },
+  {
+    title: 'Exam: freeze them',
+    body: 'Build a Slow field and make sure it switches <b>off</b> when nothing is in range, so it doesn\'t waste power.',
+    tasks: [{ text: 'A Slow field uses both <code>field.on()</code> and <code>field.off()</code>.', check: g => anyCode(g, /field\.on\(/, 'field') && anyCode(g, /field\.off\(/, 'field'), focus: g => buildFocus(g, 'field') }],
+    hint: 'if len(enemies) > 0: field.on() else: field.off()',
+    solution: `    if len(enemies) > 0:
+        field.on()
+    else:
+        field.off()`,
+  },
+  {
+    title: 'Exam: membership',
+    body: 'Use <code>in</code> with a list to pick the dangerous kinds first.',
+    tasks: [{ text: 'An <code>if</code> uses <code>in</code> with a list.', check: g => /\bif\s+[^\n]*\s\bin\s+[\[\w]/.test(allCode(g)) }],
+    hint: 'if e.kind in ["leak", "beetle"]:',
+    solution: `    for e in enemies:
+        if e.kind in ["leak", "beetle"]:
+            target = e
+            break`,
+  },
+  {
+    title: 'Exam: team memory',
+    body: 'Two turrets work together through <code>mem</code>: one writes, the other reads.',
+    tasks: [{ text: 'One turret writes with <code>mem.write</code>, another reads with <code>mem.read</code>.', check: g => memWriters(g) >= 1 && memReaders(g) >= 1 && turretsOf(g).filter(t => /mem\.(read|write)\(/.test(t.code)).length >= 2 }],
+    hint: 'Writer: mem.write("seen", len(enemies)). Reader: mem.read("seen", 0).',
+    solution: `mem.write("seen", len(enemies))   # turret A
+mem.read("seen", 0)                # turret B`,
+  },
+  {
+    title: 'Exam: while',
+    body: 'Use a <code>while</code> loop (and make sure it always ends).',
+    tasks: [{ text: 'Use <code>while</code>.', check: g => /\bwhile\b/.test(allCode(g)) }],
+    hint: 'i = 0; while i < len(enemies) and ...: i = i + 1',
+    solution: `    i = 0
+    while i < len(enemies) - 1 and enemies[i].kind == "mite":
+        i = i + 1`,
+  },
+  {
+    title: 'Exam: comprehension',
+    body: 'Write a list comprehension that keeps only the enemies you care about.',
+    tasks: [{ text: 'Use a list comprehension.', check: g => /\[\s*[^\]\n]*\bfor\s+\w+\s+in\s+[^\]\n]+\]/.test(allCode(g)) }],
+    hint: 'leaks = [e for e in enemies if e.kind == "leak"]',
+    solution: `    leaks = [e for e in enemies if e.kind == "leak"]`,
+  },
+  {
+    title: 'Exam: modes',
+    body: 'Give one turret two modes and switch between them.',
+    tasks: [{ text: 'Use a mode variable (a string you compare with <code>==</code>, kept with <code>global</code>).', check: g => /\b\w+\s*==\s*["']\w+["']/.test(allCode(g)) && /\bglobal\s+\w+/.test(allCode(g)) }],
+    hint: 'mode = "save"; in update(): global mode, then change it with two different thresholds.',
+    solution: `mode = "save"
+
+def update():
+    global mode
+    if power.percent > 80:
+        mode = "attack"
+    if power.percent < 30:
+        mode = "save"`,
+  },
+  {
+    title: 'Exam: final wave',
+    body: 'A Stack overflow and a Rootkit at once. Use everything from the RAM.',
+    tasks: [{ text: 'Survive wave 8.', check: null }],
+    hint: 'Slow the bosses, laser them, and keep pulses for the leaks.',
+    solution: 'Fields at the merge, lasers on the bosses, pulses for leaks.',
+  },
+];
+
 const MOTHERBOARD_STARTER = g => {
   const psu = g.addEntity('psu', 1, 5);
   const sock = g.addEntity('socket', 6, 5);
@@ -1001,5 +1293,55 @@ export const MAPS = [
     unlock: { cannon: 1, pulse: 1, laser: 1, upgrades: 1 }, library: true,
     goal: { text: 'Every turret uses your Library and it has 3 or more functions', check: g => turretsOf(g).length > 0 && libUsers(g).length === turretsOf(g).length && libDefs(g) >= 3 },
     starter: g => { g.addEntity('psu', 2, 5); },
+  },
+  {
+    id: 'ram', name: 'RAM', num: 5, label: '3A',
+    desc: 'Lists in depth, while loops, shared memory (mem), the Slow field and memory leaks.',
+    // a ring around the chip: enemies run along the outside, then cut in to the core in the middle
+    paths: [[[-0.6, 1.5], [15.5, 1.5], [15.5, 9.5], [1.5, 9.5], [1.5, 5.5], [7.6, 5.5]]],
+    core: { c: 7, r: 4, w: 3, h: 3 },
+    start: { credits: 450, core: 20 },
+    waves: [
+      [{ t: 'bug', n: 14, gap: 0.8 }, { t: 'worm', n: 6, gap: 0.8, delay: 2 }],
+      [{ t: 'worm', n: 16, gap: 0.5 }, { t: 'bug', n: 10, gap: 0.8, delay: 1 }],
+      [{ t: 'beetle', n: 5, gap: 2 }, { t: 'bug', n: 14, gap: 0.6, delay: 1 }, { t: 'mite', n: 20, gap: 0.2, delay: 1 }],
+      [{ t: 'forkbomb', n: 6, gap: 1.8 }, { t: 'worm', n: 14, gap: 0.5, delay: 1 }],
+      [{ t: 'mite', n: 36, gap: 0.15 }, { t: 'beetle', n: 6, gap: 1.6, delay: 1 }, { t: 'worm', n: 12, gap: 0.5, delay: 1 }],
+      [{ t: 'leak', n: 8, gap: 1.6 }, { t: 'bug', n: 14, gap: 0.6, delay: 1 }],
+      [{ t: 'leak', n: 10, gap: 1.3 }, { t: 'mite', n: 30, gap: 0.15, delay: 1 }, { t: 'beetle', n: 6, gap: 1.6, delay: 1 }],
+      [{ t: 'worm', n: 24, gap: 0.3 }, { t: 'leak', n: 10, gap: 1.2, delay: 1 }, { t: 'forkbomb', n: 6, gap: 1.5, delay: 1 }],
+      [{ t: 'beetle', n: 10, gap: 1.2 }, { t: 'leak', n: 12, gap: 1.1, delay: 1 }, { t: 'mite', n: 36, gap: 0.12, delay: 1 }],
+      [{ t: 'overflow', n: 1, gap: 1 }, { t: 'leak', n: 10, gap: 1.2, delay: 3 }, { t: 'worm', n: 16, gap: 0.4, delay: 1 }, { t: 'beetle', n: 6, gap: 1.5, delay: 1 }],
+    ],
+    lessons: RAM_LESSONS,
+    hpBase: 1.35, hpGrowth: 0.16, bonus: w => 40 + 8 * w,
+    unlock: { cannon: 1, pulse: 1, laser: 1, field: 2, upgrades: 1 }, library: true,
+    goal: { text: 'At least two turrets share information through <code>mem</code> (one writes, one reads)', check: g => memWriters(g) >= 1 && memReaders(g) >= 1 && turretsOf(g).filter(t => /mem\.(read|write)\(/.test(t.code)).length >= 2 },
+    starter: g => { g.addEntity('psu', 4, 7); },
+  },
+  {
+    id: 'ram-x', name: 'RAM · Garbage collector', num: 6, label: '3B',
+    desc: 'Exam for chapter 3: two lanes that merge, leaks everywhere, one skill per wave.',
+    paths: [
+      [[-0.6, 8.5], [2.5, 8.5], [2.5, 1.5], [6.5, 1.5], [6.5, 8.5], [10.5, 8.5], [10.5, 1.5], [15.6, 1.5]],
+      [[-0.6, 4.5], [2.5, 4.5], [2.5, 1.5], [6.5, 1.5], [6.5, 8.5], [10.5, 8.5], [10.5, 1.5], [15.6, 1.5]],
+    ],
+    core: { c: 15, r: 0, w: 3, h: 3 },
+    start: { credits: 500, core: 20 },
+    waves: [
+      [{ t: 'bug', n: 12, gap: 0.8, p: 0 }, { t: 'bug', n: 10, gap: 0.9, p: 1, with: true, delay: 0.5 }],
+      [{ t: 'worm', n: 16, gap: 0.5, p: 1 }, { t: 'leak', n: 4, gap: 2, p: 0, with: true }],
+      [{ t: 'beetle', n: 6, gap: 1.8, p: 0 }, { t: 'leak', n: 6, gap: 1.6, p: 1, with: true }, { t: 'mite', n: 24, gap: 0.18, p: 0, delay: 1 }],
+      [{ t: 'forkbomb', n: 6, gap: 1.8, p: 1 }, { t: 'worm', n: 14, gap: 0.5, p: 0, with: true }, { t: 'leak', n: 6, gap: 1.5, p: 0, delay: 1 }],
+      [{ t: 'leak', n: 10, gap: 1.3, p: 0 }, { t: 'mite', n: 30, gap: 0.15, p: 1, with: true }, { t: 'beetle', n: 6, gap: 1.6, p: 1, delay: 1 }],
+      [{ t: 'worm', n: 22, gap: 0.35, p: 0 }, { t: 'leak', n: 10, gap: 1.2, p: 1, with: true }, { t: 'forkbomb', n: 6, gap: 1.5, p: 0, delay: 1 }],
+      [{ t: 'beetle', n: 10, gap: 1.3, p: 1 }, { t: 'leak', n: 12, gap: 1.1, p: 0, with: true }, { t: 'mite', n: 30, gap: 0.14, p: 1, delay: 1 }],
+      [{ t: 'overflow', n: 1, gap: 1, p: 0 }, { t: 'rootkit', n: 1, gap: 1, p: 1, with: true, delay: 10 }, { t: 'leak', n: 8, gap: 1.3, p: 1, delay: 2 }, { t: 'worm', n: 14, gap: 0.45, p: 0, with: true }],
+    ],
+    lessons: EXAM3_LESSONS,
+    hpBase: 1.0, hpGrowth: 0.12, bonus: w => 45 + 8 * w, bossMul: 0.8,
+    unlock: { cannon: 1, pulse: 1, laser: 1, field: 1, upgrades: 1 }, library: true,
+    goal: { text: 'Use a Slow field, and no turret ever browned out', check: g => turretsOf(g, 'field').length > 0 && !g.stats.brownouts },
+    starter: g => { g.addEntity('psu', 4, 5); },
   },
 ];

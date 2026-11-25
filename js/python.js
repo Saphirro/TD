@@ -15,7 +15,7 @@ _LIMITS = json.loads(${JSON.stringify(JSON.stringify(LIMITS))})
 _P = json.loads(${JSON.stringify(JSON.stringify(POWER))})
 _KIND_MODULES = json.loads(${JSON.stringify(JSON.stringify(KIND_MODULES))})
 _ALLOWED = {'math', 'random'}
-_ALL_MODS = {'radar', 'motor', 'cannon', 'laser', 'pulse', 'power', 'meter'}
+_ALL_MODS = {'radar', 'motor', 'cannon', 'laser', 'pulse', 'power', 'meter', 'field', 'mem'}
 _FILE = '<turret>'
 _LIB = '<lib>'
 _TRACED = (_FILE, _LIB)
@@ -176,8 +176,40 @@ class _Meter(_Module):
     def trend(self):
         return {1: 'charging', 0: 'steady', -1: 'draining'}[self._t.trend]
 
+class _Field(_Module):
+    """Slow field: while on, every enemy in radar range moves slower. Uses watts while on."""
+    _name = 'field'; _keys = ('slow',)
+    def on(self):
+        self._t.cmds['field'] = True
+    def off(self):
+        self._t.cmds['field'] = False
+    def cost(self):
+        return self._t.cfg['slow'] * _P['fieldWPerPct']
+
+# shared memory: one notebook that every turret on the map can read and write
+_SHARED = {}
+def reset_shared():
+    _SHARED.clear()
+
+class _Mem(_Module):
+    """mem.write(key, value), mem.read(key, default), mem.keys(), mem.clear(key): shared between all turrets."""
+    _name = 'mem'
+    def write(self, key, value):
+        if len(_SHARED) >= 200 and str(key) not in _SHARED:
+            raise ValueError('mem is full (200 keys). Use mem.clear(key) for keys you no longer need.')
+        _SHARED[str(key)] = value
+    def read(self, key, default=None):
+        return _SHARED.get(str(key), default)
+    def keys(self):
+        return list(_SHARED.keys())
+    def clear(self, key=None):
+        if key is None:
+            raise ValueError('mem.clear() needs a key, e.g. mem.clear("target"), so you never wipe other turrets\' notes by accident.')
+        _SHARED.pop(str(key), None)
+
 _MOD_CLASSES = {'radar': _Radar, 'motor': _Motor, 'cannon': _Cannon,
-                'laser': _Laser, 'pulse': _Pulse, 'power': _Power, 'meter': _Meter}
+                'laser': _Laser, 'pulse': _Pulse, 'power': _Power, 'meter': _Meter,
+                'field': _Field, 'mem': _Mem}
 
 class _T:
     def __init__(self, tid, kind):
@@ -217,7 +249,7 @@ def _make_builtins(t):
     b['print'] = _print
     return b
 
-_MODULE_NAMES = {'radar', 'motor', 'cannon', 'pulse', 'laser', 'power'}
+_MODULE_NAMES = {'radar', 'motor', 'cannon', 'pulse', 'laser', 'power', 'field', 'mem'}
 _TICK_ACTIONS = {'fire', 'stop', 'aim', 'aim_at', 'scan', 'first', 'closest', 'weakest', 'strongest'}
 
 def _check_ast(tree, fname=_FILE):
@@ -407,6 +439,7 @@ export class PyRuntime {
     this._tick = this.py.globals.get('run_tick');
     this._remove = this.py.globals.get('remove_turret');
     this._setLib = this.py.globals.get('set_library');
+    this._resetShared = this.py.globals.get('reset_shared');
     this.version = this.py.runPython('import sys; sys.version.split()[0]');
     this.ready = true;
   }
@@ -418,6 +451,9 @@ export class PyRuntime {
   tick(world) {
     return JSON.parse(this._tick(JSON.stringify(world)));
   }
+
+  // mem: start every map (and replay) with an empty shared notebook
+  resetShared() { if (this._resetShared) this._resetShared(); }
 
   // src = null turns the library off (maps without it)
   setLibrary(src) {
