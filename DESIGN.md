@@ -167,3 +167,12 @@ Permanent but **small** boosts. All of them together cost **35 stars**; 6 exist 
 - New enemies: **Memory leak** (grows 10 %/s up to 3× its starting health) and boss **Stack overflow** (grows up to 1.5×, bursts into 4 leaks). Growth caps use `growCap`.
 - **3A RAM** (`ram`, 10 waves, ring path around a central CPU): append, Slow field, `in`, mem, while, leaks first, list comprehensions, modes, slices, boss. ★★★: two turrets share info via mem. Bots: learner wins (core 8/20), others lose.
 - **3B RAM · Garbage collector** (`ram-x`, 8 waves, two merging lanes): exam. ★★★: use a Slow field and never brown out. Bots: learner wins (12/20), others lose.
+
+### Chapter 4 complete (2026-11-25): Network card
+- New module **`net`** (messages between turrets: `net.send(channel, value)`, `net.receive(channel)`, `net.channels()`; a message arrives on the next tick; needs a module slot).
+- New turret **Arc** (`arc`): `arc.fire(target)` hits the target, then jumps to nearby enemies (each jump does 75 % of the last); energy per shot = damage × (1 + jumps) × 0.9 J; `arc.jumps` 1-5 (max jump distance 1.8 tiles).
+- New enemies: **Packet** (fast, weak, comes in bursts) and **Router** (armor 2, sends out 3 packets when destroyed).
+- Python topics: classes, `__init__`, methods, lists of objects, a simple protocol between turrets, objects that keep state.
+- **4A Network card** (`net`, 10 waves, three lanes into one CPU). ★★★: two turrets work together with net. Bots: learner wins (12/20), others lose.
+- **4B Network card · Packet storm** (`net-x`, 8 waves): exam. ★★★: use your own class and an Arc. Bots: learner wins (13/20), others lose.
+- Sim fix: a bot that cannot afford a turret after building its socket now stops instead of crashing.

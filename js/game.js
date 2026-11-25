@@ -863,6 +863,7 @@ export class Game {
     if ('aim_at' in c) { t.aimPt = { x: c.aim_at[0], y: c.aim_at[1] }; t.aimId = null; }
     if (c.fire && t.type === 'cannon') this.fireCannon(s, t);
     if (c.pulse && t.type === 'pulse') this.firePulse(s, t);
+    if (c.arc != null && t.type === 'arc') this.fireArc(s, t, c.arc);
     if ('field' in c && t.type === 'field') t.fieldOn = !!c.field;
     if ('laser' in c && t.type === 'laser') {
       if (c.laser == null) t.laserId = null;
@@ -890,6 +891,33 @@ export class Game {
       x: s.x + cx * 0.45, y: s.y + cy * 0.45, vx: cx * sp, vy: cy * sp,
       dmg: t.cfg.damage, life: (t.cfg.range + 0.6) / sp, size: 0.05 + Math.min(0.08, t.cfg.damage / 600),
     });
+  }
+
+  // Arc: lightning hits the target (must be in radar range), then jumps to the nearest enemy not hit yet
+  // within POWER.arcJump tiles, up to `jumps` times; each jump does arcFalloff of the previous damage
+  fireArc(s, t, targetId) {
+    const c = t.cfg, cost = c.damage * (1 + c.jumps) * POWER.arcJPerDmg;
+    if (t.reload > 0 || s.energy < cost) return;
+    let e = this.enemyById(targetId);
+    if (!e || Math.hypot(e.x - s.x, e.y - s.y) > c.range + e.radius) return;
+    this.drain(s, cost);
+    t.reload = TURRETS.arc.reload;
+    const hit = new Set(), pts = [[s.x, s.y]];
+    let dmg = c.damage;
+    for (let j = 0; e && j <= c.jumps; j++) {
+      hit.add(e.id); pts.push([e.x, e.y]);
+      this.damage(e, dmg);
+      dmg *= POWER.arcFalloff;
+      const from = e;
+      e = null; let best = POWER.arcJump;
+      for (const o of this.enemies) {
+        if (hit.has(o.id) || o.hp <= 0) continue;
+        const d = Math.hypot(o.x - from.x, o.y - from.y);
+        if (d <= best) { best = d; e = o; }
+      }
+    }
+    this.fx.push({ type: 'arc', pts, t: 0, life: 0.25, color: TURRETS.arc.color });
+    this.emit('sfx', 'laser');
   }
 
   firePulse(s, t) {
@@ -1036,7 +1064,8 @@ export class Game {
       rows.push(['Pulsing nonstop', j / TURRETS.pulse.reload, 'W', `${j.toFixed(1)} J / 1.4 s`]);
     }
     if (t.type === 'laser') rows.push(['Laser (while firing)', c.power, 'W', `${(c.power * POWER.laserDpsPerW).toFixed(1)} dmg/s`]);
-if (t.type === 'field') rows.push(['Slow field (while on)', c.slow * POWER.fieldWPerPct, 'W', `${c.slow}% slower × ${POWER.fieldWPerPct}`]);
+    if (t.type === 'field') rows.push(['Slow field (while on)', c.slow * POWER.fieldWPerPct, 'W', `${c.slow}% slower × ${POWER.fieldWPerPct}`]);
+    if (t.type === 'arc') { const j = c.damage * (1 + c.jumps) * POWER.arcJPerDmg; rows.push(['Arc shot', j, 'J', `${c.damage} x (1 + ${c.jumps}) x 0.9`]); rows.push(['Firing nonstop', j / TURRETS.arc.reload, 'W', `${j.toFixed(1)} J / 1 s`]); }
     const peak = rows.filter(r => r[2] === 'W').reduce((a, r) => a + r[1], 0);
     return { rows, peak };
   }

@@ -35,6 +35,9 @@ export const POWER = {
   pulseRangeK: 0.5,
   pulseSurgeJ: 15,     // a pulse that hits 0-1 enemies drains this from every other socket on its PSU
   fieldWPerPct: 0.45,  // Slow field uses slow x 0.45 W while on (30 % = 13.5 W)
+  arcJPerDmg: 0.9,     // Arc: energy per shot = damage x (1 + jumps) x 0.9 J
+  arcJump: 1.8,        // Arc: max distance (tiles) for a jump
+  arcFalloff: 0.75,    // Arc: each jump does 75 % of the previous damage
   brownoutResume: 0.25 // turret restarts at 25% charge
 };
 
@@ -46,6 +49,7 @@ export const LIMITS = {
   power: [1, 80, 20],
   strength: [1, 40, 8],
   slow: [10, 60, 30],      // Slow field: % slower for enemies inside it
+  jumps: [1, 5, 2],        // Arc: how many extra enemies the lightning jumps to
 };
 
 export const BUILDINGS = {
@@ -75,7 +79,7 @@ export function labBoost(levels = {}) {
   return { library: 1 + l('library'), core: 2 * l('core'), slots: l('slots'), psuW: 10 * l('psu'), wireA: l('wire'),
     credits: 20 * l('budget'), bonusPct: 0.05 * l('bonus'), chargeW: 5 * l('charge') };
 }
-export const EXTRA_MODULES = ['power', 'meter', 'lib', 'mem'];   // need a free module slot on the socket
+export const EXTRA_MODULES = ['power', 'meter', 'lib', 'mem', 'net'];   // need a free module slot on the socket
 export const UPGRADES = {
   psu: [{ maxW: 100 }, { maxW: 140, cost: 60 }, { maxW: 180, cost: 90 }],
   // slots = extra modules a turret program may import (power, meter, lib); radar, motor and the weapon are always free
@@ -85,23 +89,28 @@ export const UPGRADES = {
 export const TURRETS = {
   cannon: {
     name: 'Cannon', cost: 60, unlock: 1, reload: 0.7, shellSpeed: 18,
-    modules: ['radar', 'motor', 'cannon', 'power', 'meter', 'mem'], color: '#5ee1ff',
+    modules: ['radar', 'motor', 'cannon', 'power', 'meter', 'mem', 'net'], color: '#5ee1ff',
     desc: 'Fires shells in the direction it faces. Needs aiming.',
   },
   pulse: {
     name: 'Pulse', cost: 80, unlock: 5, reload: 1.4,
-    modules: ['radar', 'pulse', 'power', 'meter', 'mem'], color: '#ffcf4a',
+    modules: ['radar', 'pulse', 'power', 'meter', 'mem', 'net'], color: '#ffcf4a',
     desc: 'Shockwave that hits every enemy in radar range.',
   },
   laser: {
     name: 'Laser', cost: 100, unlock: 8,
-    modules: ['radar', 'motor', 'laser', 'power', 'meter', 'mem'], color: '#ff5ea8',
+    modules: ['radar', 'motor', 'laser', 'power', 'meter', 'mem', 'net'], color: '#ff5ea8',
     desc: 'Continuous beam. Ignores armor, drains watts while firing.',
   },
   field: {
     name: 'Slow field', cost: 70, unlock: 99,
-    modules: ['radar', 'field', 'power', 'meter', 'mem'], color: '#7ad7ff',
+    modules: ['radar', 'field', 'power', 'meter', 'mem', 'net'], color: '#7ad7ff',
     desc: 'Slows every enemy in radar range while it is on. Uses watts while on, does no damage.',
+  },
+  arc: {
+    name: 'Arc', cost: 90, unlock: 99, reload: 1.0,
+    modules: ['radar', 'arc', 'power', 'meter', 'mem', 'net'], color: '#c89bff',
+    desc: 'Lightning that hits a target, then jumps to nearby enemies. No aiming needed.',
   },
 };
 
@@ -113,6 +122,8 @@ export const ENEMIES = {
   forkbomb: { name: 'Forkbomb', hp: 55, speed: 0.95, radius: 0.3, reward: 5, dmg: 2, armor: 0, splits: { type: 'mite', n: 3 }, color: '#ff8a3d', desc: 'Splits into 3 mites when destroyed.' },
   leak:    { name: 'Memory leak', hp: 50, speed: 0.85, radius: 0.27, reward: 7, dmg: 2, armor: 0, grows: 0.10, growCap: 3, color: '#ff66cc', desc: 'Grows: gains 10% health every second it is alive (up to 3x). Kill it early.' },
   overflow: { name: 'Stack overflow', hp: 1600, speed: 0.4, radius: 0.5, reward: 120, dmg: 10, armor: 2, grows: 0.025, growCap: 1.5, boss: true, splits: { type: 'leak', n: 4 }, color: '#ff3fa4', desc: 'Boss. Grows slowly (up to 1.5x) and bursts into 4 memory leaks.' },
+  packet:  { name: 'Packet', hp: 12, speed: 2.5, radius: 0.16, reward: 1, dmg: 1, armor: 0, color: '#5effc8', desc: 'Very fast and light. Comes in bursts.' },
+  router:  { name: 'Router', hp: 90, speed: 0.7, radius: 0.33, reward: 10, dmg: 2, armor: 2, splits: { type: 'packet', n: 3 }, color: '#4fd1ff', desc: 'Armor 2. Sends out 3 packets when destroyed.' },
   rootkit: { name: 'Rootkit', hp: 1400, speed: 0.45, radius: 0.5,  reward: 100, dmg: 10, armor: 3, shield: 300, shieldRegen: 20, boss: true, color: '#b15cff', desc: 'Boss. Shield regenerates after 2 s without damage.' },
 };
 
@@ -236,6 +247,22 @@ def update():
         field.on()        # slow everything in range
     else:
         field.off()       # nobody here: save the power
+`,
+  arc: `import radar, arc
+
+def setup():
+    # Runs once when you press Upload.
+    radar.range = 2.5     # tiles (1 to 6). Radar: 0.3 x range² W, always on
+    arc.damage = 12       # damage to the first enemy (1 to 60); each jump does 75 % of the one before
+    arc.jumps = 2         # extra enemies the lightning jumps to (1 to 5)
+    # energy per shot = damage x (1 + jumps) x 0.9 J
+
+def update():
+    # Runs 10 times every second.
+    enemies = radar.scan()   # enemies in range, [0] = nearest the core
+    if len(enemies) == 0:
+        return
+    arc.fire(enemies[0])     # no aiming needed: lightning finds its way
 `,
 };
 
@@ -630,6 +657,21 @@ export const DOCS = {
 <tr><td><code>field.off()</code></td><td>Switch it off to save power.</td></tr>
 <tr><td><code>field.cost()</code></td><td>Watts it uses while on.</td></tr>
 </table>`,
+  arc: `<h3>arc (Arc turret)</h3>
+<p><b>Settings</b> <code>arc.damage</code> 1–60 (default 12) and <code>arc.jumps</code> 1–5 (default 2). The lightning hits the target (inside <code>radar.range</code>), then jumps to the nearest enemy it hasn't hit yet within 1.8 tiles, up to <code>jumps</code> times. Each jump does 75 % of the one before. Armor counts on every hit. Energy per shot: <code>damage × (1 + jumps) × 0.9</code> J. Reload 1 s.</p>
+<table>
+<tr><td><code>arc.fire(target)</code></td><td>Fire at an enemy if ready. Returns True if fired.</td></tr>
+<tr><td><code>arc.ready()</code></td><td>True if reloaded and enough energy.</td></tr>
+<tr><td><code>arc.cost()</code></td><td>Energy one shot costs.</td></tr>
+</table>`,
+  net: `<h3>net (messages between turrets)</h3>
+<p>Turrets can talk. A message sent during one tick arrives during the next tick, for <b>every</b> turret that listens on that channel. Needs a module slot.</p>
+<table>
+<tr><td><code>net.send(channel, value)</code></td><td>Send a value on a channel, e.g. <code>net.send("boss", target.id)</code>.</td></tr>
+<tr><td><code>net.receive(channel)</code></td><td>List of everything sent on that channel last tick (empty list if nothing).</td></tr>
+<tr><td><code>net.channels()</code></td><td>Channels that had messages last tick.</td></tr>
+</table>
+<p>Difference to <code>mem</code>: mem keeps a value until it is overwritten; net messages are gone after one tick, like a radio call.</p>`,
   mem: `<h3>mem (shared memory)</h3>
 <p>One notebook that <b>every turret</b> on the map can read and write. Needs a module slot. It is emptied when a map starts.</p>
 <table>
@@ -1203,6 +1245,212 @@ def update():
   },
 ];
 
+// ---------------------------------------------------------------------------
+// Chapter 4: Network card (net messages, Arc turret, classes and objects, routers/packets)
+// ---------------------------------------------------------------------------
+const netSenders = g => turretsOf(g).filter(t => t.compiled && /net\.send\(/.test(t.code)).length;
+const netReceivers = g => turretsOf(g).filter(t => t.compiled && /net\.receive\(/.test(t.code)).length;
+const classNames = g => [...allCode(g).matchAll(/^\s*class\s+(\w+)/gm)].map(m => m[1]);
+const usesObjects = g => classNames(g).some(n => new RegExp(`(^|[^\\w])${n}\\(`, 'm').test(allCode(g).replace(new RegExp(`class\\s+${n}`, 'g'), '')));
+
+const NET_LESSONS = [
+  {
+    title: 'Three lanes',
+    body: `Welcome to the <b>network card</b>. Traffic comes in on <b>three lanes</b> that meet in the middle before the core.
+      <p>The meeting point is the most valuable spot: towers there cover all three lanes. But enemies only meet there late, so you also want something earlier on.</p>`,
+    tasks: [{ text: 'Build at least 3 turrets.', check: g => turretsOf(g).filter(t => t.compiled).length >= 3, focus: g => buildFocus(g, 'cannon') }],
+    hint: 'Put the first towers around the point where the three lanes meet.',
+    solution: 'No code: build near the junction in the middle.',
+  },
+  {
+    title: 'Messages: net',
+    body: `<b>New module: net.</b> <code>mem</code> is a notebook; <code>net</code> is a <b>radio</b>. A turret sends a message on a channel, and every turret listening on that channel gets it in the next tick:
+<pre>import radar, net
+net.send("boss", 1)            # one turret calls out
+calls = net.receive("boss")    # others get a list: [1] (or [] if nobody sent)</pre>
+      <p>Messages last one tick only, so they are perfect for "right now" news like "a router is coming!".</p>`,
+    tasks: [{ text: 'One turret uses <code>net.send(...)</code> and another one uses <code>net.receive(...)</code>.', check: g => netSenders(g) >= 1 && netReceivers(g) >= 1 && turretsOf(g).filter(t => /net\.(send|receive)\(/.test(t.code)).length >= 2, focus: g => ({ ents: turretSocks(g), code: /^import / }) }],
+    hint: 'Add net to the import lines (it needs a module slot). Sender: net.send("seen", len(enemies)). Receiver: if len(net.receive("seen")) > 0: ...',
+    solution: `# turret A
+    net.send("seen", len(enemies))
+# turret B
+    news = net.receive("seen")
+    if len(news) > 0 and max(news) >= 3:
+        pulse.fire()`,
+  },
+  {
+    title: 'New: Arc turret',
+    body: `<b>New turret: Arc.</b> Lightning hits your target, then <b>jumps</b> to nearby enemies (up to <code>arc.jumps</code> times, each jump a bit weaker). It needs no aiming.
+      <p>Energy per shot: <code>damage × (1 + jumps) × 0.9</code> J, so more jumps cost more.</p>`,
+    tasks: [{ text: 'Build an <b>Arc</b>.', check: g => turretsOf(g, 'arc').length > 0, focus: g => buildFocus(g, 'arc') }],
+    hint: 'Arcs are best where enemies bunch up: at the lane junction.',
+    solution: 'The Arc template already fires at the nearest enemy to the core.',
+  },
+  {
+    title: 'Classes: your own type',
+    body: `So far you used objects others made: every enemy is an object with <code>.hp</code>, <code>.kind</code>... A <b>class</b> lets you make your own kind of object:
+<pre>class Counter:
+    def __init__(self, start):
+        self.value = start        # every Counter remembers its own value
+
+c = Counter(10)                   # make one
+print(c.value)                    # 10</pre>
+      <ul><li><code>class Name:</code> starts the recipe (names of classes start with a capital letter).</li>
+      <li><code>__init__</code> runs when you make one, <code>self</code> is "this object".</li>
+      <li><code>self.value = ...</code> stores a value <b>inside</b> the object.</li></ul>`,
+    tasks: [{ text: 'Write a class with an <code>__init__(self, ...)</code> (in a turret or your Library).', check: g => /^\s*class\s+\w+/m.test(allCode(g)) && /def\s+__init__\s*\(\s*self/.test(allCode(g)), focus: g => ({ ents: turretSocks(g), code: /^def update/ }),
+      ghost: [{ before: /^def update\(/, text: 'class Counter:' }, { after: /^class Counter/, text: '    def __init__(self, start):' }, { after: /def __init__\(self, start\)/, text: '        self.value = start' }] }],
+    hint: 'class Counter:  then (4 spaces)  def __init__(self, start):  then (8 spaces)  self.value = start',
+    solution: `class Counter:
+    def __init__(self, start):
+        self.value = start`,
+  },
+  {
+    title: 'Methods',
+    body: `Functions inside a class are called <b>methods</b>. They always get <code>self</code> first, so they can use the object's own values:
+<pre>class Counter:
+    def __init__(self, start):
+        self.value = start
+    def add(self, n):
+        self.value = self.value + n
+
+c = Counter(0)
+c.add(5)
+print(c.value)      # 5</pre>
+      <p>That's exactly how <code>motor.aim(target)</code> works: <code>motor</code> is an object, <code>aim</code> is a method, and Python passes <code>motor</code> as <code>self</code>.</p>`,
+    tasks: [{ text: 'Give your class a method besides <code>__init__</code> (it takes <code>self</code> first).', check: g => /def\s+(?!__init__)\w+\s*\(\s*self\b/.test(allCode(g)), focus: g => ({ ents: turretSocks(g), code: /^class / }) }],
+    hint: 'Inside the class, 4 spaces in: def add(self, n): and 8 spaces in: self.value = self.value + n',
+    solution: `    def add(self, n):
+        self.value = self.value + n`,
+  },
+  {
+    title: 'Routers and packets',
+    body: `<b>New enemies.</b> A <b>router</b> (armor 2) sends out <b>3 packets</b> when destroyed. Packets are very fast but weak.
+      <p>Perfect for the Arc: raise <code>arc.jumps</code> so one shot clears a whole burst of packets.</p>`,
+    tasks: [{ text: 'Set <code>arc.jumps</code> to 3 or more on an Arc.', check: g => turretsOf(g, 'arc').some(t => t.compiled && t.cfg.jumps >= 3), focus: g => ({ ents: turretSocks(g, 'arc'), code: /arc\.jumps/ }), ghost: [{ change: /^\s*arc\.jumps\s*=/, text: '    arc.jumps = 3' }] }],
+    hint: 'In setup(): arc.jumps = 3. Check the Power tab: more jumps cost more energy per shot.',
+    solution: `    arc.jumps = 3`,
+  },
+  {
+    title: 'Objects in a list',
+    body: `You can make as many objects from a class as you like, and keep them in a list:
+<pre>class Note:
+    def __init__(self, kind, hp):
+        self.kind = kind
+        self.hp = hp
+
+notes = []
+for e in enemies:
+    notes.append(Note(e.kind, e.hp))</pre>
+      <p>Each <code>Note(...)</code> is a separate object with its own values.</p>`,
+    tasks: [{ text: 'Create objects from your own class (call <code>YourClass(...)</code>).', check: usesObjects, focus: g => ({ ents: turretSocks(g), code: /^class / }) }],
+    hint: 'Somewhere in update() or another function: x = YourClassName(...)',
+    solution: `    notes = [Note(e.kind, e.hp) for e in enemies]`,
+  },
+  {
+    title: 'A protocol',
+    body: `Teams agree on what their messages look like: a <b>protocol</b>. A dictionary makes a clear message:
+<pre>net.send("target", {"id": target.id, "kind": target.kind})
+for msg in net.receive("target"):
+    print(msg["kind"])</pre>`,
+    tasks: [{ text: 'Send a dictionary with <code>net.send(..., {...})</code>.', check: g => /net\.send\([^)]*\{/.test(allCode(g)), focus: g => ({ ents: turretSocks(g), code: /net\.send/ }) }],
+    hint: 'net.send("target", {"id": target.id, "hp": target.hp})',
+    solution: `    net.send("target", {"id": target.id, "hp": target.hp})`,
+  },
+  {
+    title: 'Objects that remember',
+    body: `An object made <b>outside</b> the functions lives for the whole game, just like a global variable, but it can hold many values and methods together:
+<pre>class Stats:
+    def __init__(self):
+        self.shots = 0
+    def shot(self):
+        self.shots = self.shots + 1
+
+stats = Stats()            # made once, at the top
+
+def update():
+    ...
+    if cannon.fire():
+        stats.shot()       # no "global" needed to change what's inside</pre>`,
+    tasks: [{ text: 'Make an object at the top of a program (outside the functions), e.g. <code>stats = Stats()</code>.', check: g => /^\w+\s*=\s*[A-Z]\w*\(/m.test(allCode(g)), focus: g => ({ ents: turretSocks(g), code: /^def update/ }) }],
+    hint: 'Under your class (no spaces in front): stats = Stats()',
+    solution: `stats = Stats()`,
+  },
+  {
+    title: 'Final: denial of service',
+    body: 'A Rootkit leads a flood of routers and packets down all three lanes. Use everything: arcs at the junction, messages between turrets, and your own classes.',
+    tasks: [{ text: 'Survive wave 10.', check: null }],
+    hint: 'Lasers on the Rootkit, Arcs with 3+ jumps for the packet bursts.',
+    solution: 'Arcs at the junction, lasers that prefer "rootkit", net messages to warn about the boss.',
+  },
+];
+
+const EXAM4_LESSONS = [
+  {
+    title: 'Exam: radio check',
+    body: '<b>Network exam.</b> One skill per wave. Start with turrets that talk to each other.',
+    tasks: [
+      { text: 'Build at least 3 turrets.', check: g => turretsOf(g).filter(t => t.compiled).length >= 3, focus: g => buildFocus(g, 'cannon') },
+      { text: 'One turret sends with <code>net.send</code>, another receives with <code>net.receive</code>.', check: g => netSenders(g) >= 1 && netReceivers(g) >= 1 && turretsOf(g).filter(t => /net\.(send|receive)\(/.test(t.code)).length >= 2 },
+    ],
+    hint: 'Add net to both import lines.',
+    solution: `net.send("seen", len(enemies))      # turret A
+net.receive("seen")                  # turret B`,
+  },
+  {
+    title: 'Exam: chain lightning',
+    body: 'Packets come in bursts. Build an Arc with 3 or more jumps.',
+    tasks: [{ text: 'An Arc with <code>arc.jumps</code> of 3 or more.', check: g => turretsOf(g, 'arc').some(t => t.compiled && t.cfg.jumps >= 3), focus: g => buildFocus(g, 'arc') }],
+    hint: 'arc.jumps = 3 in setup().',
+    solution: '    arc.jumps = 3',
+  },
+  {
+    title: 'Exam: a class',
+    body: 'Write a class with <code>__init__</code>.',
+    tasks: [{ text: 'A class with <code>__init__(self, ...)</code>.', check: g => /^\s*class\s+\w+/m.test(allCode(g)) && /def\s+__init__\s*\(\s*self/.test(allCode(g)) }],
+    hint: 'class Counter: / def __init__(self, start): / self.value = start',
+    solution: `class Counter:
+    def __init__(self, start):
+        self.value = start`,
+  },
+  {
+    title: 'Exam: a method',
+    body: 'Give the class a method of its own.',
+    tasks: [{ text: 'A method besides <code>__init__</code>.', check: g => /def\s+(?!__init__)\w+\s*\(\s*self\b/.test(allCode(g)) }],
+    hint: 'def add(self, n): self.value = self.value + n',
+    solution: `    def add(self, n):
+        self.value = self.value + n`,
+  },
+  {
+    title: 'Exam: many objects',
+    body: 'Create objects from your class.',
+    tasks: [{ text: 'Call your class to create objects.', check: usesObjects }],
+    hint: 'notes = [Note(e.kind, e.hp) for e in enemies]',
+    solution: '    notes = [Note(e.kind, e.hp) for e in enemies]',
+  },
+  {
+    title: 'Exam: protocol',
+    body: 'Send a dictionary as a message.',
+    tasks: [{ text: 'Use <code>net.send(..., {...})</code>.', check: g => /net\.send\([^)]*\{/.test(allCode(g)) }],
+    hint: 'net.send("target", {"id": target.id, "kind": target.kind})',
+    solution: '    net.send("target", {"id": target.id, "kind": target.kind})',
+  },
+  {
+    title: 'Exam: long-lived object',
+    body: 'Keep an object alive for the whole game: make it outside the functions.',
+    tasks: [{ text: 'An object created at the top of a program.', check: g => /^\w+\s*=\s*[A-Z]\w*\(/m.test(allCode(g)) }],
+    hint: 'stats = Stats() (no spaces in front)',
+    solution: 'stats = Stats()',
+  },
+  {
+    title: 'Exam: final wave',
+    body: 'Two Rootkits and a storm of routers. Everything you have.',
+    tasks: [{ text: 'Survive wave 8.', check: null }],
+    hint: 'Split your lasers between the lanes; arcs where lanes meet.',
+    solution: 'Lasers on each boss lane, arcs at the merges, net to call out the bosses.',
+  },
+];
+
 const MOTHERBOARD_STARTER = g => {
   const psu = g.addEntity('psu', 1, 5);
   const sock = g.addEntity('socket', 6, 5);
@@ -1343,5 +1591,60 @@ export const MAPS = [
     unlock: { cannon: 1, pulse: 1, laser: 1, field: 1, upgrades: 1 }, library: true,
     goal: { text: 'Use a Slow field, and no turret ever browned out', check: g => turretsOf(g, 'field').length > 0 && !g.stats.brownouts },
     starter: g => { g.addEntity('psu', 4, 5); },
+  },
+  {
+    id: 'net', name: 'Network card', num: 7, label: '4A',
+    desc: 'Three lanes, messages between turrets (net), the Arc turret, classes and objects.',
+    // three lanes (top, middle, bottom) meet in the middle, then run to the core
+    paths: [
+      [[-0.6, 1.5], [8.5, 1.5], [8.5, 5.5], [15.6, 5.5]],
+      [[-0.6, 5.5], [15.6, 5.5]],
+      [[-0.6, 9.5], [8.5, 9.5], [8.5, 5.5], [15.6, 5.5]],
+    ],
+    core: { c: 15, r: 4, w: 3, h: 3 },
+    start: { credits: 500, core: 20 },
+    waves: [
+      [{ t: 'bug', n: 8, gap: 1.1, p: 0 }, { t: 'bug', n: 8, gap: 1.1, p: 2, with: true, delay: 0.5 }],
+      [{ t: 'worm', n: 10, gap: 0.6, p: 1 }, { t: 'bug', n: 10, gap: 0.9, p: 0, with: true }],
+      [{ t: 'packet', n: 16, gap: 0.3, p: 2 }, { t: 'beetle', n: 4, gap: 2.2, p: 1, with: true }],
+      [{ t: 'forkbomb', n: 5, gap: 2, p: 0 }, { t: 'worm', n: 12, gap: 0.5, p: 2, with: true }, { t: 'packet', n: 16, gap: 0.25, p: 1, delay: 1 }],
+      [{ t: 'beetle', n: 5, gap: 1.9, p: 1 }, { t: 'leak', n: 5, gap: 1.8, p: 0, with: true }, { t: 'mite', n: 18, gap: 0.22, p: 2, with: true }],
+      [{ t: 'router', n: 5, gap: 2, p: 0 }, { t: 'router', n: 5, gap: 2, p: 2, with: true, delay: 1 }, { t: 'worm', n: 12, gap: 0.5, p: 1, delay: 1 }],
+      [{ t: 'packet', n: 30, gap: 0.2, p: 1 }, { t: 'router', n: 6, gap: 1.6, p: 0, with: true }, { t: 'beetle', n: 6, gap: 1.6, p: 2, with: true }],
+      [{ t: 'router', n: 6, gap: 1.6, p: 2 }, { t: 'leak', n: 6, gap: 1.5, p: 0, with: true }, { t: 'worm', n: 16, gap: 0.45, p: 1, delay: 1 }],
+      [{ t: 'beetle', n: 8, gap: 1.4, p: 0 }, { t: 'router', n: 8, gap: 1.4, p: 1, with: true }, { t: 'packet', n: 36, gap: 0.15, p: 2, with: true }],
+      [{ t: 'rootkit', n: 1, gap: 1, p: 0 }, { t: 'router', n: 5, gap: 1.8, p: 1, with: true, delay: 2 }, { t: 'packet', n: 20, gap: 0.22, p: 2, with: true, delay: 2 }, { t: 'beetle', n: 4, gap: 1.8, p: 1 }],
+    ],
+    lessons: NET_LESSONS,
+    hpBase: 0.85, hpGrowth: 0.14, bonus: w => 45 + 8 * w, bossMul: 0.7,
+    unlock: { cannon: 1, pulse: 1, laser: 1, field: 1, arc: 3, upgrades: 1 }, library: true,
+    goal: { text: 'Two turrets work together with <code>net</code> (one sends, one receives)', check: g => netSenders(g) >= 1 && netReceivers(g) >= 1 && turretsOf(g).filter(t => /net\.(send|receive)\(/.test(t.code)).length >= 2 },
+    starter: g => { g.addEntity('psu', 6, 4); },
+  },
+  {
+    id: 'net-x', name: 'Network card · Packet storm', num: 8, label: '4B',
+    desc: 'Exam for chapter 4: three lanes, two merges, routers everywhere.',
+    paths: [
+      [[-0.6, 1.5], [12.5, 1.5], [12.5, 5.5], [15.6, 5.5]],
+      [[-0.6, 5.5], [4.5, 5.5], [4.5, 9.5], [12.5, 9.5], [12.5, 5.5], [15.6, 5.5]],
+      [[-0.6, 9.5], [4.5, 9.5], [12.5, 9.5], [12.5, 5.5], [15.6, 5.5]],
+    ],
+    core: { c: 15, r: 4, w: 3, h: 3 },
+    start: { credits: 550, core: 20 },
+    waves: [
+      [{ t: 'bug', n: 10, gap: 0.9, p: 0 }, { t: 'packet', n: 12, gap: 0.35, p: 1, with: true }],
+      [{ t: 'router', n: 4, gap: 2.2, p: 2 }, { t: 'worm', n: 12, gap: 0.55, p: 0, with: true }],
+      [{ t: 'beetle', n: 5, gap: 2, p: 1 }, { t: 'packet', n: 20, gap: 0.25, p: 0, with: true }, { t: 'mite', n: 20, gap: 0.2, p: 2, delay: 1 }],
+      [{ t: 'router', n: 6, gap: 1.8, p: 0 }, { t: 'router', n: 5, gap: 1.8, p: 2, with: true, delay: 1 }],
+      [{ t: 'leak', n: 8, gap: 1.4, p: 1 }, { t: 'packet', n: 24, gap: 0.2, p: 2, with: true }, { t: 'beetle', n: 6, gap: 1.6, p: 0, delay: 1 }],
+      [{ t: 'router', n: 8, gap: 1.5, p: 1 }, { t: 'worm', n: 18, gap: 0.4, p: 0, with: true }, { t: 'forkbomb', n: 5, gap: 1.8, p: 2, delay: 1 }],
+      [{ t: 'beetle', n: 8, gap: 1.4, p: 2 }, { t: 'router', n: 8, gap: 1.4, p: 0, with: true }, { t: 'packet', n: 30, gap: 0.15, p: 1, with: true }],
+      [{ t: 'rootkit', n: 1, gap: 1, p: 0 }, { t: 'rootkit', n: 1, gap: 1, p: 2, with: true, delay: 10 }, { t: 'router', n: 6, gap: 1.5, p: 1, delay: 2 }, { t: 'packet', n: 24, gap: 0.2, p: 0, with: true }],
+    ],
+    lessons: EXAM4_LESSONS,
+    hpBase: 0.75, hpGrowth: 0.13, bonus: w => 50 + 8 * w, bossMul: 0.75,
+    unlock: { cannon: 1, pulse: 1, laser: 1, field: 1, arc: 1, upgrades: 1 }, library: true,
+    goal: { text: 'Use your own class (create objects from it) and an Arc', check: g => usesObjects(g) && turretsOf(g, 'arc').length > 0 },
+    starter: g => { g.addEntity('psu', 8, 5); },
   },
 ];

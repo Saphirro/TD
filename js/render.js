@@ -430,6 +430,18 @@ export class Renderer {
       if (alive) this.drawGlow(s.x, s.y, 0.25 + 0.15 * charge + t.pulseT, col, 0.4 + 0.5 * charge);
       return;
     }
+    if (t.type === 'arc') {
+      // Arc: a coil with a glowing tip; the glow grows while it recharges
+      const charge = 1 - t.reload / TURRETS.arc.reload;
+      ctx.beginPath(); ctx.arc(0, 0, 0.27, 0, TAU);
+      ctx.fillStyle = '#1e1630'; ctx.fill(); ctx.lineWidth = 0.025; ctx.strokeStyle = col + '99'; ctx.stroke();
+      ctx.strokeStyle = '#8a6cc4'; ctx.lineWidth = 0.035;
+      for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(0, 0, 0.09 + i * 0.05, 0, TAU); ctx.stroke(); }
+      ctx.beginPath(); ctx.arc(0, 0, 0.07, 0, TAU); ctx.fillStyle = alive ? '#f0e2ff' : '#4a3d60'; ctx.fill();
+      ctx.restore();
+      if (alive) this.drawGlow(s.x, s.y, 0.15 + 0.2 * charge, col, 0.3 + 0.6 * charge);
+      return;
+    }
     if (t.type === 'field') {
       // Slow field: a dish of three emitters; when active, a frosty zone covers its radar range
       const on = alive && t.fieldActive;
@@ -559,6 +571,18 @@ export class Renderer {
         ctx.fillStyle = gr; ctx.fill(); ctx.strokeStyle = '#ffb37a'; ctx.lineWidth = 0.02; ctx.stroke();
         ctx.strokeStyle = '#3a1200'; ctx.lineWidth = 0.03; ctx.lineCap = 'round';
         ctx.beginPath(); ctx.moveTo(-r * 0.3, 0); ctx.lineTo(r * 0.3, 0); ctx.moveTo(0, 0); ctx.lineTo(r * 0.25, -r * 0.3); ctx.moveTo(0, 0); ctx.lineTo(r * 0.25, r * 0.3); ctx.stroke();
+      } else if (e.type === 'packet') {
+        // packet: a small glowing envelope streaking along
+        ctx.fillStyle = 'rgba(94,255,200,0.25)'; ctx.fillRect(-r * 3, -r * 0.5, r * 2, r);   // speed trail
+        ctx.fillStyle = '#5effc8'; ctx.fillRect(-r, -r * 0.7, r * 2, r * 1.4);
+        ctx.strokeStyle = '#0b3d2e'; ctx.lineWidth = 0.02;
+        ctx.beginPath(); ctx.moveTo(-r, -r * 0.7); ctx.lineTo(0, 0); ctx.lineTo(r, -r * 0.7); ctx.stroke();
+      } else if (e.type === 'router') {
+        // router: a box with antennas and blinking lights
+        ctx.fillStyle = '#163448'; ctx.strokeStyle = '#4fd1ff'; ctx.lineWidth = 0.025;
+        ctx.beginPath(); ctx.roundRect(-r, -r * 0.7, r * 2, r * 1.4, 0.05); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-r * 0.5, -r * 0.7); ctx.lineTo(-r * 0.7, -r * 1.3); ctx.moveTo(r * 0.5, -r * 0.7); ctx.lineTo(r * 0.7, -r * 1.3); ctx.stroke();
+        for (let i = 0; i < 4; i++) { ctx.fillStyle = Math.sin(a * 3 + i) > 0 ? '#5effc8' : '#1c4a3c'; ctx.fillRect(-r * 0.7 + i * r * 0.42, r * 0.1, r * 0.22, r * 0.22); }
       } else if (e.type === 'leak' || e.type === 'overflow') {
         // memory leak: a wobbling blob that swells as it grows; the overflow boss has a stacked core
         const wob = Math.sin(a * 1.3) * 0.04;
@@ -662,6 +686,24 @@ export class Renderer {
     ctx.restore();
     for (const f of this.g.fx) {
       const k = f.t / f.life;
+      if (f.type === 'arc') {
+        // jagged lightning from the turret through every enemy it jumped to
+        ctx.save(); ctx.globalAlpha = 1 - k; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+        for (const [w, col] of [[0.09, f.color], [0.03, '#ffffff']]) {
+          ctx.beginPath();
+          for (let i = 0; i < f.pts.length - 1; i++) {
+            const [x1, y1] = f.pts[i], [x2, y2] = f.pts[i + 1];
+            if (i === 0) ctx.moveTo(x1, y1);
+            for (let s = 1; s <= 4; s++) {
+              const q = s / 4, j = s < 4 ? (Math.sin((f.t * 60 + i * 7 + s) * 2.3) * 0.12) : 0;
+              ctx.lineTo(x1 + (x2 - x1) * q + j, y1 + (y2 - y1) * q - j);
+            }
+          }
+          ctx.strokeStyle = col; ctx.lineWidth = w; ctx.stroke();
+        }
+        ctx.restore();
+        continue;
+      }
       if (f.type === 'ring') {
         ctx.beginPath(); ctx.arc(f.x, f.y, Math.max(0.01, f.r * (0.15 + 0.85 * Math.sqrt(k))), 0, TAU);
         ctx.strokeStyle = f.color; ctx.globalAlpha = 1 - k; ctx.lineWidth = 0.02 + 0.1 * (1 - k); ctx.stroke();

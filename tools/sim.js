@@ -59,6 +59,7 @@ export async function run(opts = {}) {
       let type = 'cannon';
       if (g.isUnlocked('pulse') && turrets.filter(s => s.turret.type === 'pulse').length < Math.ceil(n / 4)) type = 'pulse';
       if (g.isUnlocked('laser') && turrets.filter(s => s.turret.type === 'laser').length < Math.ceil(n / 4)) type = 'laser';
+      if (g.isUnlocked('arc') && turrets.filter(s => s.turret.type === 'arc').length < Math.ceil(n / 4)) type = 'arc';   // chapter 4+: arcs for packet bursts
       const capW = g.psus().reduce((a, p) => a + p.maxW, 0);
       const needPsu = !freePort() || (opts.wattsPerTower && n * opts.wattsPerTower >= capW);
       const sp = spots(type === 'pulse' ? 2 : 3)[0];
@@ -79,11 +80,12 @@ export async function run(opts = {}) {
         }
       }
       const s = g.build('socket', sp.c, sp.r);
+      if (!s) break;
       if (!s.input) {   // built on a wire → already spliced into it. Otherwise wire from the nearest PSU with a free port
         const near = g.psus().filter(p => p.outputs.length < 4).sort((a, b) => (Math.abs(a.c - s.c) + Math.abs(a.r - s.r)) - (Math.abs(b.c - s.c) + Math.abs(b.r - s.r)))[0];
         g.addWire(near.id, s.id, { pay: true });
       }
-      g.buildTurret(type, s);
+      if (!s || !g.buildTurret(type, s)) { if (!globalThis.__simFail) console.log("SIM build fail", type, g.credits, g.wave); globalThis.__simFail = 1; break; }
       g.compileTurret(s, code[type] || TEMPLATES[type]);
     }
     // smart spending: money left over this wave goes into upgrades (overloaded PSUs first, then turret sockets)

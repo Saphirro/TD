@@ -15,7 +15,7 @@ _LIMITS = json.loads(${JSON.stringify(JSON.stringify(LIMITS))})
 _P = json.loads(${JSON.stringify(JSON.stringify(POWER))})
 _KIND_MODULES = json.loads(${JSON.stringify(JSON.stringify(KIND_MODULES))})
 _ALLOWED = {'math', 'random'}
-_ALL_MODS = {'radar', 'motor', 'cannon', 'laser', 'pulse', 'power', 'meter', 'field', 'mem'}
+_ALL_MODS = {'radar', 'motor', 'cannon', 'laser', 'pulse', 'power', 'meter', 'field', 'mem', 'arc', 'net'}
 _FILE = '<turret>'
 _LIB = '<lib>'
 _TRACED = (_FILE, _LIB)
@@ -189,6 +189,7 @@ class _Field(_Module):
 # shared memory: one notebook that every turret on the map can read and write
 _SHARED = {}
 def reset_shared():
+    _NET['out'] = {}; _NET['in'] = {}
     _SHARED.clear()
 
 class _Mem(_Module):
@@ -207,9 +208,46 @@ class _Mem(_Module):
             raise ValueError('mem.clear() needs a key, e.g. mem.clear("target"), so you never wipe other turrets\' notes by accident.')
         _SHARED.pop(str(key), None)
 
+class _Arc(_Module):
+    """Arc: lightning hits the target, then jumps to up to arc.jumps nearby enemies (each jump does less)."""
+    _name = 'arc'; _keys = ('damage', 'jumps')
+    def cost(self):
+        c = self._t.cfg
+        return c['damage'] * (1 + c['jumps']) * _P['arcJPerDmg']
+    def ready(self):
+        t = self._t
+        return t.reload <= 0 and t.energy >= self.cost() and not t.cmds.get('arc')
+    def fire(self, target):
+        _need_enemy('arc.fire()', target)
+        if self.ready():
+            self._t.cmds['arc'] = target.id
+            return True
+        t = self._t
+        if t.reload <= 0 and t.energy < self.cost():
+            t.cmds['starved'] = round(self.cost(), 1)
+        return False
+
+# net: messages between turrets. What is sent during one tick can be received during the next tick.
+_NET = {'out': {}, 'in': {}}
+def _net_swap():
+    _NET['in'] = _NET['out']; _NET['out'] = {}
+
+class _Net(_Module):
+    """net.send(channel, value) and net.receive(channel) -> list of values sent on that channel last tick."""
+    _name = 'net'
+    def send(self, channel, value):
+        box = _NET['out'].setdefault(str(channel), [])
+        if len(box) >= 50:
+            raise ValueError('too many messages on one channel in one tick (max 50)')
+        box.append(value)
+    def receive(self, channel):
+        return list(_NET['in'].get(str(channel), []))
+    def channels(self):
+        return list(_NET['in'].keys())
+
 _MOD_CLASSES = {'radar': _Radar, 'motor': _Motor, 'cannon': _Cannon,
                 'laser': _Laser, 'pulse': _Pulse, 'power': _Power, 'meter': _Meter,
-                'field': _Field, 'mem': _Mem}
+                'field': _Field, 'mem': _Mem, 'arc': _Arc, 'net': _Net}
 
 class _T:
     def __init__(self, tid, kind):
@@ -249,7 +287,7 @@ def _make_builtins(t):
     b['print'] = _print
     return b
 
-_MODULE_NAMES = {'radar', 'motor', 'cannon', 'pulse', 'laser', 'power', 'field', 'mem'}
+_MODULE_NAMES = {'radar', 'motor', 'cannon', 'pulse', 'laser', 'power', 'field', 'mem', 'arc', 'net'}
 _TICK_ACTIONS = {'fire', 'stop', 'aim', 'aim_at', 'scan', 'first', 'closest', 'weakest', 'strongest'}
 
 def _check_ast(tree, fname=_FILE):
@@ -392,6 +430,7 @@ def compile_turret(tid, kind, src):
 
 def run_tick(world_json):
     w = json.loads(world_json)
+    _net_swap()   # messages sent last tick can be received now
     _world['enemies'] = w['enemies']
     _world['time'] = w['time']
     res = {}
