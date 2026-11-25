@@ -59,14 +59,30 @@ export class Renderer {
     this.cv.style.width = r.width + 'px';
     this.cv.style.height = r.height + 'px';
     const pad = r.width < 700 ? 4 : 16;
-    this.T = Math.max(8, Math.min((r.width - pad * 2) / COLS, (r.height - pad * 2) / ROWS));
-    this.ox = (r.width - this.T * COLS) / 2;
-    this.oy = (r.height - this.T * ROWS) / 2;
+    // portrait screens (phones held upright): turn the board a quarter turn so it fills the screen.
+    // Enemies then come in at the top and run down to the CPU at the bottom.
+    const fitFlat = Math.min((r.width - pad * 2) / COLS, (r.height - pad * 2) / ROWS);
+    const fitRot = Math.min((r.width - pad * 2) / ROWS, (r.height - pad * 2) / COLS);
+    this.rot = fitRot > fitFlat * 1.15;
+    this.T = Math.max(8, this.rot ? fitRot : fitFlat);
+    const bw = (this.rot ? ROWS : COLS) * this.T, bh = (this.rot ? COLS : ROWS) * this.T;
+    this.ox = (r.width - bw) / 2;      // top-left corner of the board on screen (CSS px)
+    this.oy = (r.height - bh) / 2;
     this.buildBg();
   }
 
-  toTile(px, py) { return { x: (px - this.ox) / this.T, y: (py - this.oy) / this.T }; }
-  world(ctx = this.ctx) { ctx.setTransform(this.dpr * this.T, 0, 0, this.dpr * this.T, this.dpr * this.ox, this.dpr * this.oy); }
+  // tile coords → screen CSS px, and back. Rotated: tile x runs down the screen, tile y runs right-to-left.
+  toScreen(x, y) {
+    return this.rot ? { x: this.ox + (ROWS - y) * this.T, y: this.oy + x * this.T } : { x: this.ox + x * this.T, y: this.oy + y * this.T };
+  }
+  toTile(px, py) {
+    return this.rot ? { x: (py - this.oy) / this.T, y: ROWS - (px - this.ox) / this.T } : { x: (px - this.ox) / this.T, y: (py - this.oy) / this.T };
+  }
+  world(ctx = this.ctx) {
+    const k = this.dpr * this.T;
+    if (this.rot) ctx.setTransform(0, k, -k, 0, this.dpr * (this.ox + ROWS * this.T), this.dpr * this.oy);
+    else ctx.setTransform(k, 0, 0, k, this.dpr * this.ox, this.dpr * this.oy);
+  }
 
   glow(color) {
     let c = this.glows.get(color);
@@ -91,9 +107,14 @@ export class Renderer {
     c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     c.font = `${opts.weight || 700} ${Math.max(8, size * this.T)}px ${opts.font || 'Inter, system-ui, sans-serif'}`;
     c.textAlign = opts.align || 'center'; c.textBaseline = 'middle';
-    if (opts.stroke) { c.lineWidth = 3; c.strokeStyle = opts.stroke; c.strokeText(str, this.ox + x * this.T, this.oy + y * this.T); }
+    // labels stay upright when the board is turned; "above the part" (−y) becomes "beside it" there,
+    // so in rotated mode a small offset (dy) is moved back to screen-up
+    let p;
+    if (this.rot && opts.anchor) { const a = this.toScreen(opts.anchor[0], opts.anchor[1]); p = { x: a.x, y: a.y + (y - opts.anchor[1]) * this.T }; }
+    else p = this.toScreen(x, y);
+    if (opts.stroke) { c.lineWidth = 3; c.strokeStyle = opts.stroke; c.strokeText(str, p.x, p.y); }
     c.fillStyle = color;
-    c.fillText(str, this.ox + x * this.T, this.oy + y * this.T);
+    c.fillText(str, p.x, p.y);
     c.restore();
   }
 
@@ -209,9 +230,11 @@ export class Renderer {
     // only work on the part of the canvas the wires cover
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const w of g.wires.values()) for (const [px, py] of g.wirePoints(w)) { x0 = Math.min(x0, px); y0 = Math.min(y0, py); x1 = Math.max(x1, px); y1 = Math.max(y1, py); }
-    const k = this.dpr * this.T;
-    const bx = Math.max(0, Math.floor(this.dpr * this.ox + (x0 - 0.5) * k)), by = Math.max(0, Math.floor(this.dpr * this.oy + (y0 - 0.5) * k));
-    const bw = Math.min(L.width, Math.ceil(this.dpr * this.ox + (x1 + 0.5) * k)) - bx, bh = Math.min(L.height, Math.ceil(this.dpr * this.oy + (y1 + 0.5) * k)) - by;
+    // corners of that box on screen (works for the turned board too), in device pixels
+    const cs = [[x0 - 0.5, y0 - 0.5], [x1 + 0.5, y1 + 0.5]].map(([a, b]) => this.toScreen(a, b));
+    const sx0 = Math.min(cs[0].x, cs[1].x), sx1 = Math.max(cs[0].x, cs[1].x), sy0 = Math.min(cs[0].y, cs[1].y), sy1 = Math.max(cs[0].y, cs[1].y);
+    const bx = Math.max(0, Math.floor(sx0 * this.dpr)), by = Math.max(0, Math.floor(sy0 * this.dpr));
+    const bw = Math.min(L.width, Math.ceil(sx1 * this.dpr)) - bx, bh = Math.min(L.height, Math.ceil(sy1 * this.dpr)) - by;
     if (bw <= 0 || bh <= 0) return;
 
     const K = 8, OUT = 0.85, IN = 0.4;               // taper from 0.85 tiles off the bus centre down to 0.4 (rails sit at 0.45)
@@ -297,8 +320,8 @@ export class Renderer {
     ctx.beginPath(); ctx.arc(0, 0, 1.45, -Math.PI / 2, -Math.PI / 2 + TAU * hp);
     ctx.strokeStyle = col; ctx.lineWidth = 0.07; ctx.lineCap = 'round'; ctx.stroke();
     ctx.restore();
-    this.text('CPU', cx, cy - 0.12, 0.36, '#e8fbff', { font: 'Orbitron, Inter, sans-serif', weight: 800 });
-    this.text(`${g.core}/${g.coreMax}`, cx, cy + 0.28, 0.24, col, { weight: 700 });
+    this.text('CPU', cx, cy - 0.12, 0.36, '#e8fbff', { font: 'Orbitron, Inter, sans-serif', weight: 800, anchor: [cx, cy] });
+    this.text(`${g.core}/${g.coreMax}`, cx, cy + 0.28, 0.24, col, { weight: 700, anchor: [cx, cy] });
   }
 
   // ---- buildings -----------------------------------------------------------------
@@ -323,7 +346,7 @@ export class Renderer {
     ctx.strokeStyle = loadColor(load); ctx.lineWidth = 0.045; ctx.lineCap = 'round'; ctx.stroke();
     ctx.restore();
     this.drawGlow(e.x + 0.34, e.y - 0.34, 0.12, e.overload ? '#ff3b5c' : '#3dff9a', 0.9);
-    this.text('PSU', e.x, e.y + 0.56, 0.2, '#9fb7cc', { weight: 700 });
+    this.text('PSU', e.x, e.y + 0.56, 0.2, '#9fb7cc', { weight: 700, anchor: [e.x, e.y] });
   }
 
   drawSplitter(e) {
@@ -606,7 +629,7 @@ export class Renderer {
         ctx.fillStyle = f.color; ctx.globalAlpha = 0.12 * (1 - k); ctx.fill(); ctx.globalAlpha = 1;
       } else if (f.type === 'text') {
         ctx.globalAlpha = 1;
-        this.text(f.text, f.x, f.y - k * 0.5, f.small ? 0.16 : 0.24, f.color, { stroke: 'rgba(0,0,0,0.8)', weight: 800 });
+        this.text(f.text, f.x, f.y - k * 0.5, f.small ? 0.16 : 0.24, f.color, { stroke: 'rgba(0,0,0,0.8)', weight: 800, anchor: [f.x, f.y] });
       }
     }
     ctx.globalAlpha = 1;
@@ -661,7 +684,7 @@ export class Renderer {
         if (l > best) { best = l; mx = (x1 + x2) / 2; my = (y1 + y2) / 2; }
       }
       const W = selW.aS * 12, maxW = selW.maxA * 12, P = selW.peakW || 0;
-      this.text(`${Math.round(W)} / ${maxW} W · peak ${Math.round(P)} W`, mx, my - 0.32, 0.26, P > maxW ? '#ff7a8f' : P >= maxW * 0.75 ? '#ffcf6a' : '#e8fbff', { stroke: '#031009' });
+      this.text(`${Math.round(W)} / ${maxW} W · peak ${Math.round(P)} W`, mx, my - 0.32, 0.26, P > maxW ? '#ff7a8f' : P >= maxW * 0.75 ? '#ffcf6a' : '#e8fbff', { stroke: '#031009', anchor: [mx, my] });
     }
     // hovering a wire with Select/Sell: preview what a tap would pick
     if (h && (tool === 'select' || tool === 'sell') && !g.entAt(h.c, h.r)) {
@@ -684,7 +707,7 @@ export class Renderer {
         ctx.beginPath(); ctx.moveTo(h.c + 0.5, h.r + 0.5); ctx.lineTo(to.x, h.r + 0.5); ctx.lineTo(to.x, to.y);
         ctx.setLineDash([0.12, 0.08]); ctx.lineDashOffset = -this.t; ctx.strokeStyle = '#ffcf6a'; ctx.lineWidth = 0.05; ctx.stroke(); ctx.setLineDash([]);
         const afford = g.credits >= pv.total;
-        this.text(`joins wire · new wire +${pv.extra} = ${pv.total} cr`, h.c + 0.5, h.r - 0.2, 0.22, afford ? '#ffcf6a' : '#ff7a8f', { stroke: '#031009' });
+        this.text(`joins wire · new wire +${pv.extra} = ${pv.total} cr`, h.c + 0.5, h.r - 0.2, 0.22, afford ? '#ffcf6a' : '#ff7a8f', { stroke: '#031009', anchor: [h.c + 0.5, h.r + 0.5] });
       }
     }
     if (['cannon', 'pulse', 'laser'].includes(tool)) {
@@ -711,7 +734,7 @@ export class Renderer {
           const tgt = g.entAt(h.c, h.r);
           if (tgt && tgt !== from && tgt.type !== 'psu' && !tgt.input) {
             const cost = g.wireCost(from, tgt);
-            this.text(`wire ${cost} cr`, tx, ty - 0.6, 0.22, g.credits >= cost ? '#ffcf6a' : '#ff7a8f', { stroke: '#031009' });
+            this.text(`wire ${cost} cr`, tx, ty - 0.6, 0.22, g.credits >= cost ? '#ffcf6a' : '#ff7a8f', { stroke: '#031009', anchor: [tx, ty] });
           }
         }
       }

@@ -267,3 +267,25 @@ h4 { margin: 20px 0 8px; font-size: 11px; text-transform: uppercase; letter-spac
 .paused-chip { cursor: pointer; background: #2a2208; border: 1px solid #7a6020; color: var(--warn); font-weight: 700; }
 .CodeMirror .cm-write-line { outline: 1px dashed #ffcf6a; outline-offset: -1px; background: #ffcf6a14; }
 .CodeMirror .cm-write-line .CodeMirror-line::after { content: '← write your code here'; color: #ffcf6aaa; font-style: italic; margin-left: 10px; pointer-events: none; }
+
+/* ---------- phones held upright (narrow screens) ---------- */
+@media (max-width: 560px) {
+  /* HUD in two rows: stats + icon buttons on top, speed + Start wave below. Nothing is cut off. */
+  #hud { flex-wrap: wrap; overflow-x: visible; gap: 6px 10px; padding: 6px 10px; min-height: 0; }
+  #hud .stat { order: 1; min-width: 0; }
+  #hud .stat .lbl { font-size: 9px; letter-spacing: .08em; }
+  #hud .stat b { font-size: 14px; }
+  #hud button.icon { order: 2; width: 32px; height: 32px; font-size: 16px; }
+  #btn-maps, #btn-mute { order: 6 !important; }   /* second row, after Start wave */
+  #btn-guide { margin-left: auto; }
+  #hud .spacer { order: 3; flex: 0 0 100%; height: 0; }
+  #hud .speed { order: 4; }
+  #btn-wave { order: 5; flex: 1; padding: 8px 10px; font-size: 14px; }
+  /* toolbar: every tool fits on one row */
+  #tools { gap: 3px; padding: 5px 4px calc(5px + env(safe-area-inset-bottom)); justify-content: space-between; overflow-x: visible; }
+  .tool { flex: 1 1 0; min-width: 0; padding: 5px 1px 4px; border-radius: 8px; }
+  .tool .ic svg { width: 19px; height: 19px; }
+  .tool .lb { font-size: 9.5px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  .tool .cost { font-size: 9.5px; }
+  .tool .lock { font-size: 8px; top: 1px; right: 2px; }
+}
