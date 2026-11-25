@@ -231,6 +231,7 @@ export class UI {
   refreshToolbar() {
     const libBtn = this.el.tools.querySelector('.lib-btn');
     libBtn.hidden = !this.g.map.library;
+    document.body.classList.toggle('has-lib', !!this.g.map.library);
     libBtn.classList.toggle('on', this.editorFor === 'lib');
     libBtn.classList.toggle('warn', !!this.g.library.error);
     for (const b of this.el.tools.querySelectorAll('.tool[data-tool]')) {
@@ -238,6 +239,7 @@ export class UI {
       b.classList.toggle('on', this.tool === t.id);
       const locked = !!t.turret && !this.g.isUnlocked(t.id);
       b.classList.toggle('locked', locked);
+      if (b.hidden !== locked) b.hidden = locked;   // not unlocked yet: the button only appears in the wave its lesson introduces it
       b.querySelector('.lock').textContent = locked ? `W${this.g.unlockWave(t.id)}` : '';
       b.classList.toggle('poor', !!t.cost && this.g.credits < t.cost);
     }
@@ -297,6 +299,7 @@ export class UI {
     $('#btn-maps').addEventListener('click', () => this.campaignModal());
     $('#lesson-go').addEventListener('click', e => { e.stopPropagation(); this.el.side.classList.remove('open'); setTimeout(() => this.r.resize(), 220); });
     $('#btn-player').addEventListener('click', () => this.playersModal());
+    $('#btn-lib').addEventListener('click', () => this.openEditor('lib'));
     $('#btn-layout').addEventListener('click', () => this.setLayout?.(document.body.classList.contains('phone') ? 'desktop' : 'phone'));
     const mute = $('#btn-mute');
     const showMute = () => { mute.textContent = this.audio.muted ? '🔇' : '🔊'; mute.title = this.audio.muted ? 'Sound off (M)' : 'Sound on (M)'; };
@@ -375,6 +378,8 @@ export class UI {
   tap(c, r) {
     const g = this.g, ent = g.entAt(c, r), tool = this.tool;
     if (tool === 'select') {
+      // editor already open: clicking another turret switches the editor to that turret
+      if (this.editorFor != null && ent?.turret && ent.id !== this.editorFor) { this.openEditor(ent.id); return; }
       if (ent && ent.id === this.selected && ent.turret && performance.now() - (this._lastTap || 0) < 400) this.openEditor(ent.id);
       this._lastTap = performance.now();
       if (!ent) {
@@ -537,7 +542,7 @@ export class UI {
     const f = this.focus = this.computeFocus();
     for (const b of document.querySelectorAll('#tools .tool')) b.classList.toggle('focus', !!f?.tools.includes(b.dataset.tool));
     for (const n of document.querySelectorAll('#info [data-live]')) (n.closest('.kv') || n).classList.toggle('focus', !!f?.info.includes(n.dataset.live));
-    const domNow = new Set(f ? f.dom.flatMap(sel => [...document.querySelectorAll(sel)]) : []);
+    const domNow = new Set(f ? f.dom.flatMap(sel => [...document.querySelectorAll(sel === '#ed-upload' ? '#ed-upload, #ed-upload-top' : sel)]) : []);   // phones: Upload is in the header
     for (const n of this._focusDom || []) if (!domNow.has(n)) n.classList.remove('focus');
     for (const n of domNow) n.classList.add('focus');
     this._focusDom = domNow;
@@ -618,7 +623,7 @@ export class UI {
         <p class="note" data-live="socknote"></p>
         <div class="acts">
           ${this.upgradeBtn(e)}
-          ${t ? '<button data-act="code" class="primary">Code ✎</button>' : Object.entries(TURRETS).map(([k, d]) => `<button data-act="buy" data-type="${k}" ${g.isUnlocked(k) ? '' : 'disabled'}>${d.name} ${d.cost}</button>`).join('')}
+          ${t ? '<button data-act="code" class="primary">Code ✎</button>' : Object.entries(TURRETS).filter(([k]) => g.isUnlocked(k)).map(([k, d]) => `<button data-act="buy" data-type="${k}" ${g.isUnlocked(k) ? '' : 'disabled'}>${d.name} ${d.cost}</button>`).join('')}
           ${e.input ? '<button data-act="route">Route ↻</button><button data-act="unplug">Unplug</button>' : ''}
           ${e.input && !e.outputs.length ? '<button data-act="wirefrom" title="Pass power on to one more part. Everything after this socket shares its input wire.">Wire from here</button>' : ''}
           <button data-act="sell" class="danger">${t ? 'Sell turret' : 'Sell'}</button>
@@ -646,13 +651,13 @@ export class UI {
     return e.type === 'psu' ? `${U.maxW + (B.psuW || 0)} W` : `${U.chargeW + (B.chargeW || 0)} W charging, ${U.cap} J, ${U.slots + (B.slots || 0)} module slot${U.slots + (B.slots || 0) === 1 ? '' : 's'}`;
   }
   upgradeHtml(e) {
-    const U = UPGRADES[e.type]; if (!U) return '';
+    const U = UPGRADES[e.type]; if (!U || this.g.upgradeInfo(e)?.locked) return '';
     return `<div class="kv"><span>Level</span><b>${'★'.repeat(e.level)}${'☆'.repeat(U.length - e.level)} · ${this.upgradeText(e, e.level)}</b></div>`;
   }
   upgradeBtn(e) {
     const u = this.g.upgradeInfo(e); if (!u) return '';
     if (u.max) return '<button disabled>Max level ★</button>';
-    if (u.locked) return `<button disabled title="Upgrades unlock at wave ${u.locked}">⬆ Upgrade (wave ${u.locked})</button>`;
+    if (u.locked) return '';   // not unlocked yet: no button until the lesson that introduces upgrades
     return `<button data-act="upgrade" ${this.g.credits < u.cost ? 'disabled' : ''} title="Level ${e.level + 1}: ${this.upgradeText(e, e.level + 1)}">⬆ ${this.upgradeText(e, e.level + 1)} · ${u.cost}</button>`;
   }
 
@@ -742,6 +747,7 @@ export class UI {
     $('#ed-task').addEventListener('click', e => { if (this.edTaskBig && !e.target.closest('.et-tog')) return; this.edTaskBig = !this.edTaskBig; this.updateTip(); setTimeout(() => this.cm.refresh(), 30); });
     $('#ed-upload').addEventListener('click', () => this.upload());
     $('#ed-hint').addEventListener('click', () => this.hint());
+    $('#ed-upload-top').addEventListener('click', () => this.upload());
     $('#ed-revert').addEventListener('click', () => {
       const T = this.edTarget(); if (!T) return;
       T.t.draft = null; this.cm.set(T.t.code);

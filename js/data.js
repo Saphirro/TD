@@ -161,48 +161,55 @@ export const TEMPLATES = {
   cannon: `import radar, motor, cannon
 
 def setup():
-    radar.range = 3      # power: 0.3 x range² W, always on
-    motor.speed = 180    # power: 0.04 x speed W while turning
-    cannon.damage = 10   # power: damage x 1.5 J per shot
+    # Runs once when you press Upload.
+    # Bigger numbers = stronger turret, but more power used!
+    radar.range = 3      # tiles (1 to 6). Power: 0.3 x range² W, always on
+    motor.speed = 180    # degrees per second (30 to 720). Power: 0.04 x speed W while turning
+    cannon.damage = 10   # damage per shot. Power: damage x 1.5 J per shot
 
 def update():
-    enemies = radar.scan()
+    # Runs 10 times every second.
+    enemies = radar.scan()   # enemies in range, [0] = nearest the core
     if len(enemies) == 0:
-        return
+        return               # nothing in range, do nothing
     target = enemies[0]
-    motor.aim(target)
-    if motor.aimed(target):
+    motor.aim(target)        # start turning toward the target
+    if motor.aimed(target):  # only shoot when the barrel points at it
         cannon.fire()
 `,
   pulse: `import radar, pulse
 
 def setup():
-    radar.range = 2       # the pulse hits EVERY enemy inside this radius. Radar: 0.3 x range² W
-    pulse.strength = 8    # damage to each enemy
-    # energy per pulse = strength x (2 + 0.5 x range^2)
+    # Runs once when you press Upload.
+    radar.range = 2       # tiles (1 to 6): the pulse hits EVERY enemy inside this radius. Radar: 0.3 x range² W
+    pulse.strength = 8    # damage to each enemy (1 to 40)
+    # energy per pulse = strength x (2 + 0.5 x range²) J
 
 def update():
-    enemies = radar.scan()
+    # Runs 10 times every second.
+    enemies = radar.scan()   # enemies in range
     # TODO (Lesson 7): only fire when 3 or more enemies are in range
     if len(enemies) > 0:
-        pulse.fire()
+        pulse.fire()         # hitting only 1 enemy causes a power SURGE
 `,
   laser: `import radar, motor, laser
 
 def setup():
-    radar.range = 3.5     # power: 0.3 x range² W, always on
-    motor.speed = 240     # power: 0.04 x speed W while turning
-    laser.power = 20      # watts while firing, damage/s = power x 0.8
+    # Runs once when you press Upload.
+    radar.range = 3.5     # tiles (1 to 6). Power: 0.3 x range² W, always on
+    motor.speed = 240     # degrees per second (30 to 720). Power: 0.04 x speed W while turning
+    laser.power = 20      # watts while firing (1 to 80). Damage per second = power x 0.8, ignores armor
 
 def update():
-    enemies = radar.scan()
+    # Runs 10 times every second.
+    enemies = radar.scan()   # enemies in range, [0] = nearest the core
     if not enemies:
-        laser.stop()
+        laser.stop()         # nothing to shoot: switch the beam off to save power
         return
     target = enemies[0]
-    motor.aim(target)
+    motor.aim(target)        # start turning toward the target
     if motor.aimed(target):
-        laser.fire(target)    # must be called every tick to keep the beam on
+        laser.fire(target)   # must be called every tick to keep the beam on
     else:
         laser.stop()
 `,
@@ -240,7 +247,7 @@ export const LESSONS = [
       <p>To make something happen, you <b>call a function</b>: write its name followed by brackets. <code>cannon.fire()</code> tells the cannon module to shoot.</p>`,
     tasks: [
       {
-        text: 'Open the cannon\'s code: double-click it (on a phone: tap it, then <b>Code</b>). On the empty line under the yellow <code># TODO</code>, type <code>cannon.fire()</code>. Press <b>Upload</b> (or Ctrl+S), then <b>Start wave</b>.',
+        text: 'Open the cannon\'s code: <span class="pc">double-click the cannon</span><span class="tap">tap the cannon, then <b>Code</b></span>. On the empty line under the yellow <code># TODO</code>, type <code>cannon.fire()</code>. Press <b>Upload</b><span class="pc"> (or Ctrl+S)</span>, then <b>Start wave</b>.',
         check: g => anyCode(g, /cannon\.fire\(/, 'cannon'),
         focus: g => ({ ents: turretSocks(g, 'cannon'), code: /# TODO/, dom: ['#ed-upload'] }),
         ghost: [{ after: /# TODO \(Lesson 1\)/, text: '    cannon.fire()' }],
@@ -263,12 +270,12 @@ export const LESSONS = [
       <li>A socket can pass power on to one more part. Build on top of a wire and the new part joins it. Everything after a wire shares its 60 W.</li></ul>`,
     tasks: [
       {
-        text: 'Build a second cannon: <b>Socket</b> on an empty tile near the path, then <b>Wire</b> from the PSU to that socket, then <b>Cannon</b> on the socket. It starts with a copy of your cannon program.',
+        text: '<b>Build a second cannon.</b> <span class="pc">Pick <b>Socket</b> in the toolbar and click an empty tile near the path. Pick <b>Wire</b>, click the PSU, then your socket. Pick <b>Cannon</b> and click the socket.</span><span class="tap">Tap an empty tile near the path and choose <b>Socket</b>. Tap the socket, choose <b>🔌 Power</b>, then tap the PSU. Tap the socket again and choose <b>Cannon</b>.</span> It starts with a copy of your cannon program.',
         check: g => turretsOf(g, 'cannon').length >= 2,
         focus: g => buildFocus(g, 'cannon'),
       },
       {
-        text: 'Tap the <b>PSU</b> and look at <b>Output</b> and <b>Demand</b>: how many watts your cannons use right now.',
+        text: '<span class="pc">Click the <b>PSU</b></span><span class="tap">Tap the <b>PSU</b> and choose <b>ℹ Info</b></span>, and look at <b>Output</b> and <b>Demand</b>: how many watts your cannons use right now.',
         check: g => !!g.flags.psuViewed,
         focus: g => ({ ents: g.psus().map(p => p.id), info: ['psuload', 'psudemand'] }),
       },
@@ -411,12 +418,12 @@ def update():
       <li><b>yellow</b>: its sockets could use 75–100% of its power</li>
       <li><b>red</b>: if all its sockets charge at once they need more than 100 W. Then it is <b>overloaded</b>: everyone gets a smaller share, capacitors drain and turrets run low (⚡).</li></ul>
       <p>Each socket can pull up to 30 W while it charges, so one PSU comfortably runs about <b>3 turrets</b>.</p>
-      <p><b>The fix:</b> build another PSU (80 credits), close to your towers so the wires are short. Then move a socket over to it: tap the socket, press <b>Unplug</b>, pick <b>Wire</b> and connect it from the new PSU. New towers can go straight onto the new PSU.</p>
+      <p><b>The fix:</b> build another PSU (80 credits), close to your towers so the wires are short. Then move a socket over to it: <span class="pc">click the socket, press <b>Unplug</b>, pick <b>Wire</b> and connect it from the new PSU</span><span class="tap">tap the socket and choose <b>⏏ Unplug</b>, then tap it again, choose <b>🔌 Power</b> and tap the new PSU</span>. New towers can go straight onto the new PSU.</p>
       <p>Tap a PSU to see its <b>Peak</b>: what it would need if everything charged at the same time.</p>
       <p><b>New: upgrades.</b> Instead of a second PSU you can upgrade one: <b>⬆ Upgrade</b> on a PSU raises it to 140 W, then 180 W. Sockets can be upgraded too: they charge faster (40, then 50 W) and store more energy. Upgrades are cheaper than new parts but limited, so choose where they matter.</p>`,
     tasks: [
       {
-        text: 'Get more power: build a second <b>PSU</b> and connect a socket to it, <b>or</b> upgrade your PSU (tap it, then <b>⬆ Upgrade</b>).',
+        text: 'Get more power: <span class="pc">pick <b>PSU</b> in the toolbar, click an empty tile, then <b>Wire</b> it to a socket</span><span class="tap">tap an empty tile and choose <b>PSU</b>, then tap it, choose <b>➜ Wire out</b> and tap a socket</span>. <b>Or</b> upgrade your PSU: <span class="pc">click it, then <b>⬆ Upgrade</b></span><span class="tap">tap it and choose <b>⬆ Upgrade</b></span>.',
         check: g => g.psus().filter(p => p.outputs.length).length >= 2 || g.psus().some(p => p.level >= 2),
         focus: g => {
           const spare = g.psus().find(p => !p.outputs.length);
@@ -425,7 +432,7 @@ def update():
         },
       },
       {
-        text: 'Get every PSU out of the red: no PSU should need more than it can give at peak (tap it and check <b>Peak</b>).',
+        text: 'Get every PSU out of the red: no PSU should need more than it can give at peak (<span class="pc">click it</span><span class="tap">tap it, choose <b>ℹ Info</b></span> and check <b>Peak</b>).',
         check: g => { g.updatePeaks(); return g.psus().length >= 2 && g.psus().every(p => (p.peakW || 0) <= p.maxW + 0.01); },
         focus: g => { g.updatePeaks(); return { ents: g.psus().filter(p => (p.peakW || 0) > p.maxW).map(p => p.id), info: ['psupeak'] }; },
       },
@@ -645,7 +652,7 @@ print(double(5))    # prints 10</pre>
   {
     title: 'The shared library',
     body: `Copying the same function into every turret gets messy. Real programmers put shared code in a <b>module</b>, and you can too.
-      <p>Open <b>📚 Library</b> (bottom toolbar). Functions you write there work in every turret: add <code>import lib</code> and call <code>lib.pick_target(enemies)</code>. Change the library once, and every turret uses the new version.</p>`,
+      <p>Open <b>📚 Library</b> (<span class="pc">bottom toolbar, or the L key</span><span class="tap">📚 in the top bar</span>). Functions you write there work in every turret: add <code>import lib</code> and call <code>lib.pick_target(enemies)</code>. Change the library once, and every turret uses the new version.</p>`,
     tasks: [
       { text: 'Write a <code>pick_target</code> function in the Library and upload it.', check: g => /def\s+pick_target/.test(libCode(g)) && !g.library.error },
       { text: 'Use <code>lib</code> in at least 2 turrets (<code>import lib</code>).', check: g => libUsers(g).length >= 2 },

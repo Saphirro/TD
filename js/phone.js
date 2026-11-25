@@ -9,16 +9,23 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const nameOf = e => (e.type === 'socket' ? (e.turret ? `${TURRETS[e.turret.type].name} #${e.id}` : `Socket #${e.id}`) : `${BUILDINGS[e.type].name} #${e.id}`);
 
-// code chips: building blocks (words and symbols), not finished lines. Only the tiny commands
-// every turret needs (like cannon.fire()) are whole. [label, text inserted] or just the text.
-const CHIPS = {
-  common: [['if', 'if '], ['for', 'for '], ['in', ' in '], ['def', 'def '], ['return', 'return '], ':', '(', ')', '.', ',',
-    ['=', ' = '], ['==', ' == '], ['<=', ' <= '], ['>=', ' >= '], ['<', ' < '], ['>', ' > '], ['and', ' and '], ['not', 'not '],
-    'True', 'False', 'target', 'enemies', 'len', 'print', ['+', ' + ']],
-  cannon: ['cannon.fire()', 'motor', 'cannon', 'radar', 'aim', 'aimed', 'distance', 'damage'],
-  pulse: ['pulse.fire()', 'pulse', 'radar', 'count', 'e', 'strength'],
-  laser: ['laser.stop()', 'laser', 'motor', 'radar', 'aimed', 'fire', 'power'],
-};
+// code chips: building blocks (words and symbols), not finished lines. They appear lesson by lesson
+// (from = lesson index on map 1; later maps have them all), the newest first. Only the tiny commands
+// every turret needs (like cannon.fire()) are whole. c: label or [label, text inserted]; only: turret types.
+const CHIPS = [
+  { from: 0, c: 'cannon.fire()', only: ['cannon'] },
+  { from: 0, c: 'pulse.fire()', only: ['pulse'] },
+  { from: 0, c: 'laser.stop()', only: ['laser'] },
+  { from: 2, c: ['if', 'if '] }, { from: 2, c: ':' }, { from: 2, c: 'motor', only: ['cannon', 'laser'] }, { from: 2, c: 'aimed', only: ['cannon', 'laser'] },
+  { from: 2, c: '.' }, { from: 2, c: '(' }, { from: 2, c: ')' }, { from: 2, c: 'target' },
+  { from: 3, c: ['def', 'def '] }, { from: 3, c: ['return', 'return '] }, { from: 3, c: ['<=', ' <= '] }, { from: 3, c: 'distance' }, { from: 3, c: ',' }, { from: 3, c: 'in_range' },
+  { from: 4, c: 'meter' },
+  { from: 5, c: ['=', ' = '] }, { from: 5, c: 'damage', only: ['cannon'] }, { from: 5, c: 'strength', only: ['pulse'] },
+  { from: 7, c: ['for', 'for '] }, { from: 7, c: ['in', ' in '] }, { from: 7, c: 'enemies' }, { from: 7, c: 'e' }, { from: 7, c: 'count' }, { from: 7, c: ['+', ' + '] }, { from: 7, c: ['>=', ' >= '] }, { from: 7, c: 'len' },
+  { from: 8, c: 'kind' }, { from: 8, c: 'hp' }, { from: 8, c: ['==', ' == '] }, { from: 8, c: '"beetle"' },
+  { from: 9, c: 'power' }, { from: 9, c: 'percent' }, { from: 9, c: ['<', ' < '] }, { from: 9, c: ['and', ' and '] }, { from: 9, c: ['not', 'not '] }, { from: 9, c: 'laser', only: ['laser'] },
+  { from: 10, c: ['global', 'global '] }, { from: 10, c: 'print' }, { from: 10, c: 'aim_at', only: ['cannon', 'laser'] },
+];
 
 export function installPhone(ui) {
   const g = ui.g, r = ui.r, body = document.body;
@@ -156,6 +163,7 @@ export function installPhone(ui) {
     if (e.type === 'socket' && !e.turret) {
       for (const [k, d] of Object.entries(TURRETS)) {
         const locked = !g.isUnlocked(k);
+        if (locked) continue;   // appears in the wave its lesson introduces it
         items.push({ icon: { cannon: '◎', pulse: '◉', laser: '✷' }[k], label: d.name, cost: locked ? `W${g.unlockWave(k)}` : d.cost, tool: k,
           disabled: locked || g.credits < d.cost, why: locked ? `${d.name} unlocks at wave ${g.unlockWave(k)}.` : `Need ${d.cost} credits.`,
           fn: () => { const t = g.buildTurret(k, e); if (t) { ui.select(e.id); ui.copyNote(t); } } });
@@ -165,7 +173,7 @@ export function installPhone(ui) {
     if (e.type === 'socket' && !e.input) items.push({ icon: '🔌', label: 'Power', tool: 'power', fn: () => setMode({ kind: 'to', id: e.id }) });
     if (PORTS[e.type] && e.outputs.length < PORTS[e.type] && (e.type === 'psu' || e.input)) items.push({ icon: '➜', label: 'Wire out', tool: 'wire', fn: () => setMode({ kind: 'from', id: e.id }) });
     const u = g.upgradeInfo(e);
-    if (u && !u.max) items.push({ icon: '⬆', label: u.locked ? `W${u.locked}` : 'Upgrade', cost: u.locked ? null : u.cost, tool: 'upgrade',
+    if (u && !u.max && !u.locked) items.push({ icon: '⬆', label: 'Upgrade', cost: u.cost, tool: 'upgrade',
       disabled: !!u.locked || g.credits < u.cost, why: u.locked ? `Upgrades unlock at wave ${u.locked}.` : `Need ${u.cost} credits.`,
       fn: () => { g.upgrade(e); ui.renderInfo(); } });
     items.push({ icon: 'ℹ', label: 'Info', fn: () => { ui.select(e.id); ui.el.info.classList.add('show-phone'); } });
@@ -214,7 +222,8 @@ export function installPhone(ui) {
   function renderChips() {
     const T = ui.edTarget();
     const type = T && !T.lib ? T.t.type : null;
-    const chips = [...(CHIPS[type] || []), ...CHIPS.common];
+    const upto = g.map.num > 1 ? 99 : g.lessonIndex();   // later maps: everything learned so far
+    const chips = CHIPS.filter(x => x.from <= upto && (!x.only || x.only.includes(type))).sort((a, b) => b.from - a.from).map(x => x.c);
     bar.innerHTML = '<button class="chip-k" data-k="kbd" title="Show the keyboard">⌨</button><button class="chip-k" data-k="tab">⇥</button><button class="chip-k" data-k="nl">↵</button><button class="chip-k" data-k="bs">⌫</button>'
       + chips.map(c => { const [label, text] = Array.isArray(c) ? c : [c, c]; return `<button class="chip-c" data-c="${esc(text)}">${esc(label)}</button>`; }).join('');
   }

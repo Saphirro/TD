@@ -482,3 +482,12 @@ body.phone .CodeMirror, body.phone .CodeMirror textarea, body.phone .fallback-ed
 .lab-pips { color: var(--gold); font-size: 12px; letter-spacing: 2px; margin-left: 4px; }
 .lab-row button { flex: none; min-width: 64px; }
 .modal-box:has(.lab) { width: min(560px, 100%); }
+body.phone #ed-upload-top { padding: 6px 12px; font-size: 13px; }
+body.phone #editor #ed-close { background: #2a0f16; border-color: #6b2333; color: #ffb3c0; }
+body.phone .ed-actions #ed-upload { display: none; }   /* Upload lives in the header on phones */
+/* lesson text: PC and phone versions of the same instruction */
+body.phone .pc { display: none !important; }
+body:not(.phone) .tap { display: none !important; }
+/* phones have no toolbar: the Library gets a top-bar button on maps that have one */
+#btn-lib { display: none; }
+body.phone.has-lib #btn-lib { display: grid; }
