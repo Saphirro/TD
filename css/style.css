@@ -319,3 +319,116 @@ h4 { margin: 20px 0 8px; font-size: 11px; text-transform: uppercase; letter-spac
   body.ed-open.ed-split #console { height: 56px; }
   body.ed-split #ed-guide { background: #143a2d; border-color: var(--accent); }
 }
+
+/* ---------- player profiles ---------- */
+.players { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; margin: 10px 0 4px; }
+.player-card { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 12px 8px 10px; border: 1px solid var(--line2); border-radius: 12px; background: #0b1d16; cursor: pointer; }
+.player-card:hover { border-color: var(--accent); }
+.player-card .av { font-size: 32px; line-height: 1; }
+.player-card b { font-size: 14px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.player-card [data-del] { position: absolute; top: 2px; right: 6px; text-decoration: none; font-size: 13px; }
+.field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); margin: 8px 0; }
+.field input { font: inherit; font-size: 16px; color: var(--text); background: #071712; border: 1px solid var(--line2); border-radius: 8px; padding: 9px 10px; }
+.avatars { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.av-pick { font-size: 24px; width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--line); background: #0b1d16; cursor: pointer; }
+.av-pick.on { border-color: var(--accent); background: #12352a; box-shadow: 0 0 10px #5ee1ff44; }
+
+/* =====================================================================
+   PHONE MODE (touch screens, body.phone) - landscape game layout
+   ===================================================================== */
+.phone-only { display: none !important; }
+body.phone .phone-only { display: revert !important; }
+body.phone #chipbar.phone-only { display: flex !important; }
+
+/* slim one-row HUD */
+body.phone #hud { flex-wrap: nowrap; gap: 10px; padding: 4px 10px; padding-left: max(10px, env(safe-area-inset-left)); padding-right: max(10px, env(safe-area-inset-right)); min-height: 0; overflow: visible; }
+body.phone #hud .brand, body.phone #hud .spacer { display: none; }
+body.phone #hud .stat { order: 0; min-width: 0; }
+body.phone #hud .stat .lbl { font-size: 8.5px; }
+body.phone #hud .stat b { font-size: 13px; }
+body.phone #st-power { margin-right: auto; }
+body.phone #hud .speed { order: 1; }
+body.phone #hud .speed button { padding: 3px 7px; font-size: 12px; }
+body.phone #hud button.icon { order: 2 !important; width: 32px; height: 32px; font-size: 16px; margin: 0; }
+/* big round Start wave button, bottom-right like most mobile TD games */
+body.phone #btn-wave { position: fixed; right: max(12px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); z-index: 22; flex: none; order: 9; border-radius: 999px; padding: 12px 18px; font-size: 15px; box-shadow: 0 6px 24px #000a, 0 0 18px #5ee1ff55; }
+body.phone #btn-wave:disabled { opacity: .85; }
+/* no toolbar: tap the board instead (ring menus) */
+body.phone #tools { display: none; }
+body.phone #main { flex-direction: row; }
+body.phone #tip { display: none !important; }
+
+/* info card only when asked for (ring → Info) */
+body.phone #info:not(.show-phone) { display: none !important; }
+body.phone #info.show-phone { left: 10px; right: auto; bottom: 10px; width: min(330px, 46vw); max-height: 80%; overflow: auto; }
+
+/* lesson: full-screen card (tap the coach bubble or 📘) */
+body.phone #side, body.phone #side.open { position: fixed; inset: 0; width: auto; height: auto; z-index: 40; display: none; border: 0; transition: none; }
+body.phone #side.open { display: flex; }
+body.phone #guide > .pane-head { cursor: pointer; padding: 8px 16px; }
+body.phone #guide > .pane-head::before { display: none; }
+body.phone #side .sheet-toggle { display: grid !important; }
+body.phone #side .sheet-toggle::after { content: ''; }
+body.phone #guide .pane-body { display: block; padding: 10px 18px 24px; }
+
+/* ring menu */
+#ring { position: absolute; z-index: 21; width: 0; height: 0; }
+#ring .ring-dot { position: absolute; left: -7px; top: -7px; width: 14px; height: 14px; border-radius: 50%; border: 2px solid #e8fbff; box-shadow: 0 0 10px #5ee1ff; }
+#ring .ring-btn { position: absolute; transform: translate(-50%, -50%); width: 62px; height: 62px; border-radius: 50%; border: 1px solid var(--line2); background: #0c241c; color: var(--text); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; cursor: pointer; box-shadow: 0 6px 18px #000b; animation: ringIn .14s ease-out both; padding: 0; }
+.ring-btn .ri { font-size: 19px; line-height: 1; }
+.ring-btn .rl { font-size: 9.5px; font-weight: 700; line-height: 1.1; margin-top: 2px; max-width: 58px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ring-btn .rc { font-size: 9.5px; font-weight: 800; color: var(--gold); line-height: 1; }
+#ring .ring-btn.primary { background: linear-gradient(#26c8ec, #1590b3); color: #021419; border-color: #5ee1ff; }
+.ring-btn.primary .rc { color: #021419; }
+#ring .ring-btn.danger { border-color: #6b2333; background: #2a0f16; color: #ffb3c0; }
+#ring .ring-btn.off { opacity: .45; }
+#ring .ring-btn.focus { animation: ringIn .14s ease-out both, focusPulse 1.2s ease-in-out infinite; border-color: #ffcf6a; }
+@keyframes ringIn { from { opacity: 0; transform: translate(-50%, -50%) scale(.6); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
+
+/* coach bubble (one line: what to do now) */
+#coach { display: none; }
+body.phone #coach:not([hidden]) { display: flex; position: absolute; z-index: 20; top: 6px; left: 50%; transform: translateX(-50%); max-width: min(560px, 70%); gap: 10px; align-items: center; padding: 7px 12px; border-radius: 12px; background: #161f0ce8; border: 1px solid #6b7f2a; color: #e9f5c8; font-size: 12.5px; line-height: 1.35; box-shadow: 0 6px 20px #000a; cursor: pointer; }
+#coach .ct { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+#coach .cl { color: var(--gold); font-weight: 800; margin-right: 4px; }
+#coach .more { flex: none; color: var(--accent); font-weight: 700; font-size: 12px; }
+#coach button { flex: none; padding: 4px 10px; font-size: 12px; }
+#coach code { font-size: 11.5px; }
+
+/* "turn your phone" hint (upright phones) */
+#rotate-hint { display: none; }
+body.phone.portrait:not(.upright) #rotate-hint { display: flex; position: fixed; inset: 0; z-index: 60; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: #04110df5; text-align: center; padding: 24px; }
+#rotate-hint .rot-ic { font-size: 54px; animation: rotHint 1.8s ease-in-out infinite; }
+#rotate-hint b { font-size: 20px; font-family: Orbitron, Inter, sans-serif; }
+#rotate-hint span { color: var(--muted); }
+@keyframes rotHint { 0%, 30% { transform: rotate(0); } 60%, 100% { transform: rotate(90deg); } }
+
+/* code editor on a phone: full screen, tabs, code chips */
+body.phone #editor.float { position: fixed; inset: 0 !important; width: auto !important; height: auto !important; border-radius: 0; border: 0; z-index: 30; resize: none; }
+body.phone #editor .pane-head { padding: 4px 10px; gap: 6px; align-items: center; }
+body.phone #ed-kicker { display: none; }
+body.phone #editor .pane-head h2 { font-size: 13px; margin: 0; }
+body.phone #ed-guide { display: none !important; }
+body.phone #ed-task { max-height: 40px; padding: 4px 12px; font-size: 11.5px; }
+body.phone #editor .tabs { overflow-x: auto; flex-wrap: nowrap; }
+body.phone #editor .tabs button { padding: 5px 11px; flex: none; }
+body.phone .ed-actions { flex-wrap: nowrap; gap: 5px; padding: 4px 8px; }
+body.phone .ed-actions button, body.phone .ed-actions select { padding: 5px 9px; font-size: 12.5px; }
+body.phone #ed-copy { max-width: 100px; }
+body.phone #tab-code .console-head, body.phone #tab-code #console { display: none; }
+body.phone #tab-code.console-mode > * { display: none !important; }
+body.phone #tab-code.console-mode .console-head { display: flex !important; }
+body.phone #tab-code.console-mode #console { display: block !important; flex: 1; height: auto; }
+body.phone #tab-lesson { padding: 8px 16px 20px; }
+#chipbar { gap: 5px; padding: 5px 8px; overflow-x: auto; background: #071712; border-top: 1px solid var(--line); scrollbar-width: none; }
+#chipbar button { flex: none; font-family: var(--mono); font-size: 13px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line2); background: #0e2a20; color: #d9f4ea; cursor: pointer; white-space: pre; }
+#chipbar .chip-k { background: #12352a; color: var(--accent); font-family: Inter, sans-serif; font-weight: 800; min-width: 36px; }
+/* phone mode uses tabs instead of the half/half split */
+body.phone.ed-open.ed-split #editor.float { bottom: 0 !important; }
+body.phone.ed-open.ed-split #side:not(.open) { display: none; }
+body.phone.ed-open.ed-split #ed-task { display: block !important; }
+body.phone.ed-open.ed-split #ed-task[hidden] { display: none !important; }
+/* phone held upright anyway: let the top bar wrap */
+body.phone.portrait #hud { flex-wrap: wrap; row-gap: 4px; }
+body.phone.portrait #st-power { margin-right: 0; }
+body.phone.portrait #hud .speed { order: 3; }
+body.phone.portrait #btn-player { margin-left: auto; }

@@ -214,7 +214,7 @@ export const LESSONS = [
       <p>To make something happen, you <b>call a function</b>: write its name followed by brackets. <code>cannon.fire()</code> tells the cannon module to shoot.</p>`,
     tasks: [
       {
-        text: 'Double-click the cannon (double-tap on a phone) to open its code. On the empty line under the yellow <code># TODO</code>, type <code>cannon.fire()</code>. Press <b>Upload</b> (or Ctrl+S), then <b>Start wave</b>.',
+        text: 'Open the cannon\'s code: double-click it (on a phone: tap it, then <b>Code</b>). On the empty line under the yellow <code># TODO</code>, type <code>cannon.fire()</code>. Press <b>Upload</b> (or Ctrl+S), then <b>Start wave</b>.',
         check: g => anyCode(g, /cannon\.fire\(/, 'cannon'),
         focus: g => ({ ents: turretSocks(g, 'cannon'), code: /# TODO/, dom: ['#ed-upload'] }),
       },

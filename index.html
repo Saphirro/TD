@@ -33,6 +33,7 @@
       <button data-speed="3">3×</button>
     </div>
     <button id="btn-wave" class="primary">Start wave ▶</button>
+    <button id="btn-player" class="icon" title="Players">👤</button>
     <button id="btn-maps" class="icon" title="Campaign / maps">🗺</button>
     <button id="btn-guide" class="icon" title="Lessons">📘</button>
     <button id="btn-mute" class="icon" title="Sound">🔊</button>
@@ -60,9 +61,12 @@
           <button data-tab="code" class="on">Code</button>
           <button data-tab="power">Power</button>
           <button data-tab="docs">Docs</button>
+          <button data-tab="lesson" class="phone-only">Lesson</button>
+          <button data-tab="console" class="phone-only">Console</button>
         </div>
         <div class="tab-body" id="tab-code">
           <div id="cm-host"></div>
+          <div id="chipbar" class="phone-only"></div>
           <div class="ed-actions">
             <button id="ed-upload" class="primary" title="Ctrl+S">Upload ▲</button>
             <button id="ed-revert" class="ghost" title="Back to the running program">Revert</button>
@@ -74,6 +78,7 @@
         </div>
         <div class="tab-body scroll" id="tab-power" hidden></div>
         <div class="tab-body scroll docs" id="tab-docs" hidden></div>
+        <div class="tab-body scroll lesson" id="tab-lesson" hidden></div>
       </section>
       <div id="boot"><div class="spinner"></div><span>Booting Python…</span></div>
     </div>

@@ -113,6 +113,10 @@ function makeEditor(host, onChange) {
         cm.scrollIntoView({ line: i, ch: 0 }, 80);
         if (window.matchMedia('(pointer: fine)').matches) cm.focus();
       },
+      // phone: code chips insert at the cursor; the on-screen keyboard only opens when asked for
+      insert: text => { const ro = cm.getOption('readOnly'); cm.setOption('readOnly', false); cm.replaceSelection(text); cm.setOption('readOnly', ro); },
+      command: name => { const ro = cm.getOption('readOnly'); cm.setOption('readOnly', false); cm.execCommand(name); cm.setOption('readOnly', ro); },
+      setKeyboard: on => { cm.setOption('readOnly', !on); if (on) cm.focus(); },
       // mark the lines the current lesson task is about (gold bar), or clear with null
       focusLines: re => {
         const lines = cm.getValue().split('\n');
@@ -133,7 +137,10 @@ function makeEditor(host, onChange) {
   ta.addEventListener('keydown', e => {
     if (e.key === 'Tab') { e.preventDefault(); const s = ta.selectionStart; ta.setRangeText('    ', s, ta.selectionEnd, 'end'); onChange(ta.value); }
   });
-  return { get: () => ta.value, set: v => { ta.value = v; }, refresh() {}, mark() {}, focus: () => ta.focus(), gotoTodo() {}, focusLines() {} };
+  return { get: () => ta.value, set: v => { ta.value = v; }, refresh() {}, mark() {}, focus: () => ta.focus(), gotoTodo() {}, focusLines() {},
+    insert: t => { ta.setRangeText(t, ta.selectionStart, ta.selectionEnd, 'end'); onChange(ta.value); },
+    command: n => { if (n === 'newlineAndIndent') { ta.setRangeText('\n', ta.selectionStart, ta.selectionEnd, 'end'); } else if (n === 'delCharBefore' && ta.selectionStart > 0) { ta.setRangeText('', ta.selectionStart - 1, ta.selectionEnd, 'end'); } onChange(ta.value); },
+    setKeyboard: on => { ta.readOnly = !on; if (on) ta.focus(); } };
 }
 
 export class UI {
@@ -273,6 +280,7 @@ export class UI {
     });
     $('#btn-settings').addEventListener('click', () => this.settingsModal());
     $('#btn-maps').addEventListener('click', () => this.campaignModal());
+    $('#btn-player').addEventListener('click', () => this.playersModal());
     const mute = $('#btn-mute');
     const showMute = () => { mute.textContent = this.audio.muted ? '🔇' : '🔊'; mute.title = this.audio.muted ? 'Sound off (M)' : 'Sound on (M)'; };
     showMute();
@@ -634,7 +642,11 @@ export class UI {
   setTab(tab) {
     this.tab = tab;
     for (const b of document.querySelectorAll('#editor .tabs button')) b.classList.toggle('on', b.dataset.tab === tab);
-    for (const id of ['code', 'power', 'docs']) $(`#tab-${id}`).hidden = id !== tab;
+    // phone tabs: "console" shows the code tab's console only, "lesson" shows the current lesson
+    const pane = tab === 'console' ? 'code' : tab;
+    for (const id of ['code', 'power', 'docs', 'lesson']) $(`#tab-${id}`).hidden = id !== pane;
+    $('#tab-code').classList.toggle('console-mode', tab === 'console');
+    if (tab === 'lesson') $('#tab-lesson').innerHTML = `<h3>Lesson ${this.g.lessonIndex() + 1}: ${esc(this.g.lesson().title)}</h3>${$('#lesson-tasks').outerHTML.replace('id="lesson-tasks"', '')}<div class="lesson">${$('#lesson-body').innerHTML}</div>`;
     if (tab === 'code') setTimeout(() => this.cm.refresh(), 0);
     if (tab === 'power') { this.renderPower(); this.g.flags.powerTabViewed = true; }
     if (tab === 'docs') this.renderDocs();
@@ -871,7 +883,7 @@ export class UI {
   flashGuide() {
     const el = this.el.guide;
     el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
-    if (window.innerWidth > 860 && this.editorFor == null) this.el.side.classList.add('open');
+    if ((window.innerWidth > 860 || document.body.classList.contains('phone')) && this.editorFor == null) this.el.side.classList.add('open');   // phone: the new lesson shows as a card
   }
 
   // ---- misc --------------------------------------------------------------------------
@@ -940,15 +952,97 @@ export class UI {
   // ---- save / campaign -------------------------------------------------------------
   storeGet(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }
   storeSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage blocked: play without saving */ } }
-  saveKey(id = this.g.map.id) { return `cd.save.${id}`; }
+  // every player profile keeps its own saves and progress: cd.p.<profile id>.<name>
+  pk(name) { return `cd.p.${this.pid || 'none'}.${name}`; }
+  saveKey(id = this.g.map.id) { return this.pk(`save.${id}`); }
+
+  // ---- player profiles ("Who's playing?", no login) ---------------------------------
+  profiles() { return this.storeGet('cd.profiles') || []; }
+  setProfiles(list) { this.storeSet('cd.profiles', list); }
+  currentProfile() { return this.profiles().find(p => p.id === this.pid) || null; }
+
+  // older versions saved without profiles: move those saves into a first profile
+  migrateProfiles() {
+    if (this.profiles().length) return;
+    const old = [];
+    try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (/^cd\.(save\.|progress$|lastMap$)/.test(k)) old.push(k); } } catch { return; }
+    if (!old.length) return;
+    const p = { id: Math.random().toString(36).slice(2, 8), name: 'Player 1', avatar: '🤖' };
+    this.setProfiles([p]);
+    for (const k of old) {
+      try { localStorage.setItem(`cd.p.${p.id}.${k.slice(3)}`, localStorage.getItem(k)); localStorage.removeItem(k); } catch { /* ignore */ }
+    }
+  }
+
+  usePlayer(id) {
+    this.pid = id;
+    try { localStorage.setItem('cd.profile', id); } catch { /* ignore */ }
+    this.el.modal.hidden = true;
+    const p = this.currentProfile();
+    this.updatePlayerBadge();
+    const last = this.storeGet(this.pk('lastMap'));
+    const anySave = MAPS.some(m => this.storeGet(this.saveKey(m.id)));
+    const anyWin = Object.keys(this.progress().won).length > 0;
+    if (anySave || anyWin) this.campaignModal();
+    else { this.startMap(last || MAPS[0].id, false); this.toast(`Hi ${p?.name || 'player'}! Your progress is saved on this device.`, 'good'); }
+  }
+
+  updatePlayerBadge() {
+    const p = this.currentProfile(), b = document.getElementById('btn-player');
+    if (b) { b.textContent = p ? p.avatar : '👤'; b.title = p ? `Playing as ${p.name} (tap to switch)` : 'Players'; }
+  }
+
+  playersModal() {
+    const list = this.profiles();
+    const cards = list.map(p => `<div class="player-card" data-pid="${p.id}"><span class="av">${p.avatar}</span><b>${esc(p.name)}</b><button class="link" data-del="${p.id}" title="Delete this player">✕</button></div>`).join('');
+    this.modal(`<h2>Who's playing?</h2>
+      <p class="muted">Each player has their own saves on this device. No password needed.</p>
+      <div class="players">${cards || '<p class="muted">No players yet.</p>'}</div>`,
+      [{ label: '+ New player', cls: list.length ? '' : 'primary', fn: () => this.newPlayerModal() }]);
+    this.el.modal.querySelector('.players').onclick = e => {
+      const del = e.target.closest('[data-del]');
+      if (del) {
+        const p = list.find(x => x.id === del.dataset.del);
+        if (!confirm(`Delete ${p.name} and all of their saves on this device? This can't be undone.`)) return;
+        try { for (let i = localStorage.length - 1; i >= 0; i--) { const k = localStorage.key(i); if (k.startsWith(`cd.p.${p.id}.`)) localStorage.removeItem(k); } } catch { /* ignore */ }
+        this.setProfiles(list.filter(x => x.id !== p.id));
+        if (this.pid === p.id) this.pid = null;
+        this.playersModal();
+        return;
+      }
+      const c = e.target.closest('[data-pid]'); if (c) this.usePlayer(c.dataset.pid);
+    };
+  }
+
+  newPlayerModal() {
+    const avatars = ['🤖', '🦊', '🐱', '🐸', '🐼', '🦉', '🐙', '🐲', '🦄', '🐝'];
+    let pick = avatars[this.profiles().length % avatars.length];
+    this.modal(`<h2>New player</h2>
+      <label class="field">Name<input id="np-name" maxlength="16" placeholder="Your name" autocomplete="off"></label>
+      <div class="avatars">${avatars.map(a => `<button class="av-pick ${a === pick ? 'on' : ''}" data-av="${a}">${a}</button>`).join('')}</div>`,
+      [{ label: 'Back', fn: () => this.playersModal() },
+        { label: 'Start playing', cls: 'primary', close: false, fn: () => {
+          const name = ($('#np-name').value || '').trim() || `Player ${this.profiles().length + 1}`;
+          const p = { id: Math.random().toString(36).slice(2, 8), name, avatar: pick };
+          this.setProfiles([...this.profiles(), p]);
+          this.usePlayer(p.id);
+        } }]);
+    this.el.modal.querySelector('.avatars').onclick = e => {
+      const b = e.target.closest('[data-av]'); if (!b) return;
+      pick = b.dataset.av;
+      for (const x of this.el.modal.querySelectorAll('.av-pick')) x.classList.toggle('on', x === b);
+    };
+    setTimeout(() => $('#np-name')?.focus(), 50);
+  }
 
   autosave() {
     if (this.noSave || this.g.phase !== 'build') return;
     clearTimeout(this._saveT);
     this._saveT = setTimeout(() => {
       if (this.g.phase !== 'build') return;
+      if (!this.pid) return;
       this.storeSet(this.saveKey(), { ...this.g.serialize(), lessonDone: [...this.lessonDone] });
-      this.storeSet('cd.lastMap', this.g.map.id);
+      this.storeSet(this.pk('lastMap'), this.g.map.id);
     }, 400);
   }
 
@@ -958,13 +1052,13 @@ export class UI {
     try { localStorage.removeItem(this.saveKey()); } catch { /* ignore */ }
   }
 
-  progress() { return this.storeGet('cd.progress') || { won: {} }; }
+  progress() { return this.storeGet(this.pk('progress')) || { won: {} }; }
 
   recordWin() {
     if (this.noSave) return;
     const p = this.progress(), prev = p.won[this.g.map.id];
     if (!prev || this.g.core > prev.core) p.won[this.g.map.id] = { core: this.g.core, max: this.g.coreMax, at: Date.now() };
-    this.storeSet('cd.progress', p);
+    this.storeSet(this.pk('progress'), p);
   }
 
   startMap(id, fromSave) {
@@ -977,7 +1071,7 @@ export class UI {
       this.toast(`Welcome back! ${this.g.map.name}, wave ${this.g.wave + 1}.`, 'good');
     }
     this.renderGuide();
-    this.storeSet('cd.lastMap', id);
+    this.storeSet(this.pk('lastMap'), id);
   }
 
   campaignModal() {
@@ -997,8 +1091,9 @@ export class UI {
           <button class="${save ? 'ghost' : unlocked ? 'primary' : 'ghost'}" data-map="${m.id}">${save ? 'Restart' : unlocked ? 'Play' : 'Play anyway'}</button>
         </div></div>`;
     }).join('');
-    this.modal(`<h2>Campaign</h2><p class="muted">Each map teaches new code. Your progress is saved in this browser between waves.</p><div class="maps">${cards}</div>`,
-      [{ label: 'Close', fn: () => {} }]);
+    const me = this.currentProfile();
+    this.modal(`<h2>Campaign</h2><p class="muted">${me ? `Playing as ${me.avatar} <b>${esc(me.name)}</b> · ` : ""}Each map teaches new code. Progress is saved on this device between waves.</p><div class="maps">${cards}</div>`,
+      [{ label: 'Switch player', fn: () => this.playersModal() }, { label: 'Close', fn: () => {} }]);
     this.el.modal.querySelector('.maps').onclick = e => {
       const b = e.target.closest('button[data-map]'); if (!b) return;
       this.startMap(b.dataset.map, !!b.dataset.save);
@@ -1006,12 +1101,15 @@ export class UI {
   }
 
   // first screen: continue straight away if there is a save, otherwise start map 1
+  // first screen: pick (or create) a player, then continue their game
   boot() {
-    const last = this.storeGet('cd.lastMap');
-    const anySave = MAPS.some(m => this.storeGet(this.saveKey(m.id)));
-    const anyWin = Object.keys(this.progress().won).length > 0;
-    if (anySave || anyWin) this.campaignModal();
-    else if (last) this.startMap(last, false);
+    this.migrateProfiles();
+    const list = this.profiles();
+    try { this.pid = localStorage.getItem('cd.profile'); } catch { this.pid = null; }
+    if (!list.some(p => p.id === this.pid)) this.pid = null;
+    this.updatePlayerBadge();
+    if (!list.length) this.newPlayerModal();
+    else this.playersModal();
   }
 
   bootStatus(text) { $('#boot span').textContent = text; }

@@ -2,12 +2,14 @@ import { PyRuntime } from './python.js';
 import { Game } from './game.js';
 import { Renderer } from './render.js';
 import { UI } from './ui.js';
+import { installPhone } from './phone.js';
 
 const py = new PyRuntime();
 const game = new Game(py);
 const renderer = new Renderer(document.getElementById('board'), game);
 const ui = new UI(game, renderer, py);
 renderer.ui = ui;
+installPhone(ui);
 ui.boot();
 
 new ResizeObserver(() => renderer.resize()).observe(document.getElementById('stage'));

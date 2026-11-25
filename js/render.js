@@ -63,7 +63,9 @@ export class Renderer {
     // Enemies then come in at the top and run down to the CPU at the bottom.
     const fitFlat = Math.min((r.width - pad * 2) / COLS, (r.height - pad * 2) / ROWS);
     const fitRot = Math.min((r.width - pad * 2) / ROWS, (r.height - pad * 2) / COLS);
-    this.rot = fitRot > fitFlat * 1.15;
+    // phones play in landscape (a "turn your phone" hint shows when upright), so never turn the board there
+    const cl = document.body.classList;
+    this.rot = !(cl.contains('phone') && !cl.contains('upright')) && fitRot > fitFlat * 1.15;
     this.T = Math.max(8, this.rot ? fitRot : fitFlat);
     const bw = (this.rot ? ROWS : COLS) * this.T, bh = (this.rot ? COLS : ROWS) * this.T;
     this.ox = (r.width - bw) / 2;      // top-left corner of the board on screen (CSS px)
