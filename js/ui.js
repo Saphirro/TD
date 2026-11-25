@@ -916,7 +916,7 @@ export class UI {
       <label class="opt"><div><b>Screen layout</b><small>Auto picks the phone layout on small touch screens. If your browser guesses wrong, choose one here (also the 📱 / 🖥 button).</small>
         <select id="set-layout">${['auto', 'phone', 'desktop'].map(v => `<option value="${v}" ${(this.getLayout?.() || 'auto') === v ? 'selected' : ''}>${{ auto: 'Auto', phone: 'Phone (landscape, tap menus)', desktop: 'Desktop' }[v]}</option>`).join('')}</select></div></label>
       <label class="opt"><input type="checkbox" id="set-pathflow" ${this.showPathFlow ? 'checked' : ''}><div><b>Enemy path indicator</b><small>Moving dots along the enemy path and the glow where enemies enter. Shortcut: V.</small></div></label>
-      <p class="muted">Python ${this.py.version || '(loading)'} running in your browser via Pyodide.</p>`,
+      <p class="muted">Game version ${window.CD_VERSION || "?"} · Python ${this.py.version || '(loading)'} running in your browser via Pyodide.</p>`,
       [{ label: 'Restart game', cls: 'danger', fn: () => this.restart() }, {
         label: 'Done', cls: 'primary', fn: () => {
           const v = document.querySelector('input[name="mode"]:checked')?.value;
@@ -1116,7 +1116,7 @@ export class UI {
     else this.playersModal();
   }
 
-  bootStatus(text) { $('#boot span').textContent = text; }
+  bootStatus(text) { const s = $('#boot span'); if (s) s.innerHTML = `${text}<br><small class="muted">version ${window.CD_VERSION || '?'}</small>`; }
   bootDone() {
     this.el.boot.classList.add('done');
     setTimeout(() => this.el.boot.remove(), 600);
