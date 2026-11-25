@@ -58,22 +58,32 @@ export class Sfx {
     this.last = {};
     this.quiet = false;   // set by the balance bots
     try { this.muted = localStorage.getItem('cd.mute') === '1'; } catch { this.muted = false; }
-    // browsers only allow audio after a user gesture
-    const unlock = () => { this.ensure(); window.removeEventListener('pointerdown', unlock); window.removeEventListener('keydown', unlock); };
-    window.addEventListener('pointerdown', unlock);
-    window.addEventListener('keydown', unlock);
+    // browsers only allow audio after a user gesture. iPhones only count touchend/click (not pointerdown),
+    // and suspend audio again when the page goes to the background, so we try on every gesture.
+    const unlock = () => this.ensure();
+    for (const ev of ['pointerdown', 'touchend', 'click', 'keydown']) window.addEventListener(ev, unlock, { passive: true });
+    document.addEventListener('visibilitychange', () => { if (!document.hidden && this.ctx?.state !== 'running') this.ensure(); });
   }
 
   ensure() {
     if (!this.ctx) {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return null;
+      // iPhone: count as media playback, so sound also plays with the ring/silent switch on silent (Safari 16.4+)
+      try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch { /* ignore */ }
       this.ctx = new AC();
       this.master = this.ctx.createGain();
       this.master.gain.value = 0.5;
       this.master.connect(this.ctx.destination);
     }
-    if (this.ctx.state === 'suspended') this.ctx.resume();
+    if (this.ctx.state !== 'running') {
+      this.ctx.resume?.();
+      // older iPhones: playing one silent sample inside the gesture wakes the audio up
+      try {
+        const b = this.ctx.createBuffer(1, 1, 22050), s = this.ctx.createBufferSource();
+        s.buffer = b; s.connect(this.ctx.destination); s.start(0);
+      } catch { /* ignore */ }
+    }
     return this.ctx;
   }
 

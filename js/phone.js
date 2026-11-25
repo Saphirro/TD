@@ -178,7 +178,7 @@ export function installPhone(ui) {
   // ---- coach bubble: one line about what to do now ---------------------------------------
   const coach = document.createElement('div');
   coach.id = 'coach';
-  stage.appendChild(coach);
+  document.getElementById('speed').after(coach);   // lives in the top bar, right of the speed buttons (also opens the lesson)
   let coachKey = '';
   function updateCoach(force) {
     if (!isPhone()) { coach.hidden = true; return; }
@@ -199,7 +199,7 @@ export function installPhone(ui) {
   }
   coach.addEventListener('click', e => {
     if (e.target.closest('[data-cancel]')) { setMode(null); return; }
-    if (!mode) { ui.el.side.classList.add('open'); }
+    if (!mode) { $('#lesson-go').textContent = 'Continue'; ui.el.side.classList.add('open'); }
   });
 
   // ---- code chips in the editor ---------------------------------------------------------

@@ -268,8 +268,9 @@ export class UI {
     try { if (localStorage.getItem('cd.split') === '1') document.body.classList.add('ed-split'); } catch { /* ignore */ }
     $('#ed-guide').addEventListener('click', () => this.toggleSplit());
     $('#btn-guide').addEventListener('click', () => {
+      if (this.editorFor != null && document.body.classList.contains('phone')) { this.edTaskBig = !this.edTaskBig; this.updateTip(); return; }   // phone: expand the lesson strip
       if (this.editorFor != null && phone()) { this.toggleSplit(); return; }
-      this.el.side.classList.toggle('open');
+      $('#lesson-go').textContent = 'Continue'; this.el.side.classList.toggle('open');
       setTimeout(() => this.r.resize(), 220);
     });
     // phone: the lesson panel is a bottom sheet; tapping its header makes it bigger / smaller
@@ -280,6 +281,7 @@ export class UI {
     });
     $('#btn-settings').addEventListener('click', () => this.settingsModal());
     $('#btn-maps').addEventListener('click', () => this.campaignModal());
+    $('#lesson-go').addEventListener('click', e => { e.stopPropagation(); this.el.side.classList.remove('open'); setTimeout(() => this.r.resize(), 220); });
     $('#btn-player').addEventListener('click', () => this.playersModal());
     $('#btn-layout').addEventListener('click', () => this.setLayout?.(document.body.classList.contains('phone') ? 'desktop' : 'phone'));
     const mute = $('#btn-mute');
@@ -617,6 +619,7 @@ export class UI {
       this.cm.mark(null);
     });
     $('#ed-close').addEventListener('click', () => this.closeEditor());
+    $('#ed-task').addEventListener('click', e => { if (this.edTaskBig && !e.target.closest('.et-tog')) return; this.edTaskBig = !this.edTaskBig; this.updateTip(); setTimeout(() => this.cm.refresh(), 30); });
     $('#ed-upload').addEventListener('click', () => this.upload());
     $('#ed-revert').addEventListener('click', () => {
       const T = this.edTarget(); if (!T) return;
@@ -872,8 +875,13 @@ export class UI {
     if (this.editorFor != null && !guideVisible) {
       const idx = this.g.lessonIndex(), L = this.g.map.lessons[idx];
       const i = L.tasks.findIndex((t, k) => !this.lessonDone.has(`${idx}:${k}`));
-      const html = i < 0 ? '' : `<b>Lesson ${idx + 1}${L.tasks.length > 1 ? `, task ${i + 1}` : ''}:</b> ${L.tasks[i].text}`;
+      // tap the strip to expand it into the whole lesson (and tap again to make it small)
+      const big = !!this.edTaskBig;
+      const html = i < 0 && !big ? '' : `<span class="et-tog">${big ? '▴ less' : '▾ more'}</span>`
+        + (i < 0 ? `<b>Lesson ${idx + 1}</b>: all tasks done.` : `<b>Lesson ${idx + 1}${L.tasks.length > 1 ? `, task ${i + 1}` : ''}:</b> ${L.tasks[i].text}`)
+        + (big ? `<div class="et-more lesson">${L.body}</div>` : '');
       if (edTask.dataset.html !== html) { edTask.dataset.html = html; edTask.innerHTML = html; }
+      edTask.classList.toggle('big', big);
       edTask.hidden = !html;
     } else edTask.hidden = true;
     el.hidden = !tip || guideVisible || this.editorFor != null;
@@ -884,6 +892,7 @@ export class UI {
     const el = this.el.guide;
     el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
     if ((window.innerWidth > 860 || document.body.classList.contains('phone')) && this.editorFor == null) this.el.side.classList.add('open');   // phone: the new lesson shows as a card
+    $('#lesson-go').textContent = "I'm ready!";   // the card closes with this after a wave
   }
 
   // ---- misc --------------------------------------------------------------------------
@@ -896,10 +905,13 @@ export class UI {
     setTimeout(() => d.remove(), 3000);
   }
 
-  modal(html, buttons) {
+  // opts.locked: can't be closed by tapping outside (e.g. "Who's playing?" before anyone is picked)
+  modal(html, buttons, opts = {}) {
     const m = this.el.modal;
     m.querySelector('.modal-box').innerHTML = html + `<div class="acts">${buttons.map((b, i) => `<button data-i="${i}" class="${b.cls || ''}">${b.label}</button>`).join('')}</div>`;
     m.hidden = false;
+    m.dataset.locked = opts.locked ? '1' : '';
+    m.onclick = e => { if (e.target === m && !opts.locked) m.hidden = true; };   // tap outside the window = close
     m.querySelector('.acts').onclick = e => {
       const b = e.target.closest('button'); if (!b) return;
       const def = buttons[+b.dataset.i];
@@ -1002,7 +1014,7 @@ export class UI {
     this.modal(`<h2>Who's playing?</h2>
       <p class="muted">Each player has their own saves on this device. No password needed.</p>
       <div class="players">${cards || '<p class="muted">No players yet.</p>'}</div>`,
-      [{ label: '+ New player', cls: list.length ? '' : 'primary', fn: () => this.newPlayerModal() }]);
+      [{ label: '+ New player', cls: list.length ? '' : 'primary', fn: () => this.newPlayerModal() }], { locked: !this.pid });
     this.el.modal.querySelector('.players').onclick = e => {
       const del = e.target.closest('[data-del]');
       if (del) {
@@ -1030,7 +1042,7 @@ export class UI {
           const p = { id: Math.random().toString(36).slice(2, 8), name, avatar: pick };
           this.setProfiles([...this.profiles(), p]);
           this.usePlayer(p.id);
-        } }]);
+        } }], { locked: !this.pid });
     this.el.modal.querySelector('.avatars').onclick = e => {
       const b = e.target.closest('[data-av]'); if (!b) return;
       pick = b.dataset.av;
@@ -1137,7 +1149,7 @@ export class UI {
         return;
       }
       if (e.key === 'Escape') {
-        if (!this.el.modal.hidden) { this.el.modal.hidden = true; return; }
+        if (!this.el.modal.hidden) { if (!this.el.modal.dataset.locked) this.el.modal.hidden = true; return; }
         if (inField || this.editorFor) { this.closeEditor(); return; }
         if (this.wireFrom) this.wireFrom = null;
         else if (this.tool !== 'select') this.setTool('select');
