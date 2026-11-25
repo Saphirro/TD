@@ -746,6 +746,171 @@ toughest = by_hp[-1]     # the last one has the most hp</pre>
   },
 ];
 
+// ---------------------------------------------------------------------------
+// Exam maps (B maps): short challenges that use what the chapter taught
+// ---------------------------------------------------------------------------
+const cannonsAll = (g, re) => turretsOf(g, 'cannon').length > 0 && turretsOf(g, 'cannon').every(t => t.compiled && re.test(t.code));
+const libDefs = g => (libCode(g).match(/^def\s+\w+/gm) || []).length;
+const psusOk = g => { g.updatePeaks(); return g.psus().length > 0 && g.psus().every(p => (p.peakW || 0) <= p.maxW + 0.01); };
+
+const EXAM1_LESSONS = [
+  {
+    title: 'Exam: careful cannons',
+    body: `<b>Motherboard exam.</b> No new code here: this map checks what you learned on the motherboard. Everything you unlocked is ready from the start, upgrades too. Each wave asks for one skill.
+      <p>The path is longer and the bugs are tougher than on the first map, so plan your credits.</p>`,
+    tasks: [
+      { text: 'Build at least 2 cannons.', check: g => turretsOf(g, 'cannon').length >= 2, focus: g => buildFocus(g, 'cannon') },
+      { text: 'Every cannon fires only when <code>motor.aimed(target)</code> is True.', check: g => cannonsAll(g, /if\s+[^\n]*motor\.aimed\(/), focus: g => ({ ents: turretSocks(g, 'cannon', t => !/motor\.aimed\(/.test(t.code)), code: /cannon\.fire\(/ }) },
+    ],
+    hint: 'The if goes right above cannon.fire(); cannon.fire() then gets 4 more spaces.',
+    solution: `    motor.aim(target)
+    if motor.aimed(target):
+        cannon.fire()`,
+  },
+  {
+    title: 'Exam: your own function',
+    keeps: 'in_range',
+    body: 'Write <code>in_range(target, max_dist)</code> again, from memory if you can, and use it in <b>every</b> cannon so they only shoot at close enemies.',
+    tasks: [
+      { text: 'Every cannon has <code>def in_range(...)</code> and uses it in an <code>if</code>.', check: g => cannonsAll(g, /def\s+in_range\s*\(/) && cannonsAll(g, /if\s+[^\n]*in_range\(/), focus: g => ({ ents: turretSocks(g, 'cannon', t => !/in_range\(/.test(t.code)), code: /^def update/ }),
+        ghost: [{ before: /^def update\(/, text: 'def in_range(target, max_dist):' }, { after: /^def in_range\(/, text: '    return target.distance <= max_dist' }] },
+    ],
+    hint: 'def in_range(target, max_dist):  then 4 spaces in:  return target.distance <= max_dist',
+    solution: `def in_range(target, max_dist):
+    return target.distance <= max_dist`,
+  },
+  {
+    title: 'Exam: pulse discipline',
+    body: 'Mites come in swarms. Build a <b>Pulse</b> that only fires when at least 3 enemies are in range. A pulse that hits one enemy causes a surge!',
+    tasks: [
+      { text: 'Build a Pulse.', check: g => turretsOf(g, 'pulse').length > 0, focus: g => buildFocus(g, 'pulse') },
+      { text: 'It fires only when 3 or more enemies are in range (count them or use <code>len(enemies)</code>).', check: g => anyCode(g, /(len\(\s*enemies\s*\)|count)\s*>=?\s*[2-9]/, 'pulse'), focus: g => ({ ents: turretSocks(g, 'pulse'), code: /pulse\.fire\(/ }) },
+    ],
+    hint: 'if len(enemies) >= 3:  then pulse.fire() indented under it.',
+    solution: `    if len(enemies) >= 3:
+        pulse.fire()`,
+  },
+  {
+    title: 'Exam: power plan',
+    body: 'More towers need more power. Get every PSU out of the red: build another PSU or upgrade one.',
+    tasks: [{ text: 'No PSU needs more than it can give at peak (all frames green or yellow).', check: psusOk, focus: g => { g.updatePeaks(); return { ents: g.psus().filter(p => p.peakW > p.maxW).map(p => p.id), tools: ['psu'], info: ['psupeak'] }; } }],
+    hint: 'One PSU runs about 3 busy turrets. An upgraded PSU (140 W) runs 4.',
+    solution: 'No code: add a PSU near your towers or upgrade the busiest one.',
+  },
+  {
+    title: 'Exam: steady laser',
+    body: 'Armored beetles are coming. Build a <b>Laser</b> (it ignores armor) and make it save energy with <code>power.percent</code> or the <code>meter</code>.',
+    tasks: [
+      { text: 'Build a Laser.', check: g => turretsOf(g, 'laser').length > 0, focus: g => buildFocus(g, 'laser') },
+      { text: 'The laser uses <code>power.percent</code> or <code>meter</code> to decide when to stop.', check: g => anyCode(g, /power\.percent|meter\.(net|trend)/, 'laser'), focus: g => ({ ents: turretSocks(g, 'laser'), code: /^import / }) },
+    ],
+    hint: 'Add power to the import line. if power.percent < 30: laser.stop() and return.',
+    solution: `import radar, motor, laser, power
+...
+    if power.percent < 30:
+        laser.stop()
+        return`,
+  },
+  {
+    title: 'Exam: beetles first',
+    body: 'Make at least one cannon go after <b>beetles</b> first. Loop over the enemies and check <code>e.kind</code>.',
+    tasks: [{ text: 'A cannon picks beetles first (<code>e.kind == "beetle"</code>).', check: g => anyCode(g, /\.kind\s*==\s*["']beetle["']/, 'cannon'), focus: g => ({ ents: turretSocks(g, 'cannon'), code: /enemies\[0\]/ }) }],
+    hint: 'target = enemies[0], then for e in enemies: if e.kind == "beetle": target = e and break.',
+    solution: `    target = enemies[0]
+    for e in enemies:
+        if e.kind == "beetle":
+            target = e
+            break`,
+  },
+  {
+    title: 'Exam: lead the target',
+    body: 'Fast worms dodge slow shells. Aim ahead of them with <code>motor.aim_at(x, y)</code>, or keep a count with a <code>global</code> variable.',
+    tasks: [{ text: 'Use <code>motor.aim_at()</code> or a <code>global</code> variable in a turret.', check: g => anyCode(g, /\bglobal\b|aim_at\(/), focus: g => ({ ents: turretSocks(g, 'cannon'), code: /motor\.aim\(/ }) }],
+    hint: 't = target.distance / 18, then aim at target.x + target.vx * t and target.y + target.vy * t.',
+    solution: `    t = target.distance / 18
+    motor.aim_at(target.x + target.vx * t, target.y + target.vy * t)`,
+  },
+  {
+    title: 'Exam: final wave',
+    body: 'The Rootkit is back, with friends. Use everything.',
+    tasks: [{ text: 'Survive wave 8.', check: null }],
+    hint: 'Lasers ignore armor and wear the shield down. Keep your PSUs out of the red.',
+    solution: 'Mix lasers and cannons near the end of the path, and keep power in check.',
+  },
+];
+
+const EXAM2_LESSONS = [
+  {
+    title: 'Exam: Library first',
+    body: `<b>Graphics card exam.</b> Your own functions come along in your <b>📚 Library</b> (as many as your Library capacity allows). This map checks the Library skills: every turret should use it.`,
+    tasks: [
+      { text: 'Build at least 2 turrets.', check: g => turretsOf(g).filter(t => t.compiled).length >= 2, focus: g => buildFocus(g, 'cannon') },
+      { text: 'Every turret uses <code>import lib</code>.', check: g => turretsOf(g).length >= 2 && libUsers(g).length === turretsOf(g).length, focus: g => ({ ents: turretSocks(g, null, t => !/\blib\b/.test(t.code)), code: /^import / }) },
+    ],
+    hint: 'Add lib to the import line of each turret, and call lib.pick_target(enemies).',
+    solution: 'import radar, motor, cannon, lib',
+  },
+  {
+    title: 'Exam: yes or no',
+    body: 'Write a Library function that answers <code>True</code> or <code>False</code>, and use it in an <code>if</code> in a turret.',
+    tasks: [{ text: 'A Library function returns True/False and a turret uses it in an <code>if</code>.', check: g => /return\s+(True|False|.*(==|!=|<|>|\bin\b|\bnot\b))/.test(libCode(g)) && anyCode(g, /if\s+(not\s+)?lib\.\w+\(/), focus: g => ({ dom: ['.lib-btn', '#btn-lib'] }) }],
+    hint: 'def worth_pulsing(enemies): return len(enemies) >= 3',
+    solution: `def worth_pulsing(enemies):
+    return len(enemies) >= 3`,
+  },
+  {
+    title: 'Exam: count with a dictionary',
+    body: 'Keep count of something with a dictionary, for example shots per enemy kind, and print it.',
+    tasks: [{ text: 'Use a dictionary (<code>{}</code>) and <code>print</code> in your code.', check: g => /=\s*\{\s*\}|=\s*dict\(/.test(allCode(g)) && /print\(/.test(allCode(g)) }],
+    hint: 'kinds = {} outside update(); kinds[target.kind] = kinds.get(target.kind, 0) + 1',
+    solution: `kinds = {}
+...
+    kinds[target.kind] = kinds.get(target.kind, 0) + 1
+    print(kinds)`,
+  },
+  {
+    title: 'Exam: sort it out',
+    body: 'Use <code>sorted(..., key=...)</code> in your Library to pick a smarter target.',
+    tasks: [{ text: 'Your Library uses <code>sorted(</code> with <code>key=</code>.', check: g => /sorted\([^)]*key\s*=/.test(libCode(g)), focus: g => ({ dom: ['.lib-btn', '#btn-lib'] }) }],
+    hint: 'return sorted(enemies, key=lambda e: e.hp)[0] gives the weakest.',
+    solution: `def pick_target(enemies):
+    return sorted(enemies, key=lambda e: e.hp + e.shield)[-1]`,
+  },
+  {
+    title: 'Exam: defaults',
+    body: 'Give one Library function a parameter with a default value, and call it both with and without that value.',
+    tasks: [{ text: 'A Library function has a default parameter (<code>def f(a, b=...)</code>).', check: g => /def\s+\w+\([^)]*=[^)]*\)/.test(libCode(g)) }],
+    hint: 'def pick_target(enemies, prefer="beetle"):',
+    solution: `def pick_target(enemies, prefer="beetle"):
+    for e in enemies:
+        if e.kind == prefer:
+            return e
+    return enemies[0]`,
+  },
+  {
+    title: 'Exam: readable output',
+    body: 'Print something useful with an f-string, only when something happens (so the console stays readable).',
+    tasks: [{ text: 'A turret prints with an f-string.', check: g => turretsOf(g).some(t => t.compiled && /print\(\s*f["']/.test(t.code)) }],
+    hint: 'if cannon.fire(): print(f"hit {target.kind}")',
+    solution: `    if cannon.fire():
+        print(f"shot {target.kind} at {target.distance:.1f}")`,
+  },
+  {
+    title: 'Exam: three helpers',
+    body: 'A good Library grows. Have at least 3 of your own functions in it.',
+    tasks: [{ text: 'Your Library has 3 or more functions.', check: g => libDefs(g) >= 3, focus: g => ({ dom: ['.lib-btn', '#btn-lib'] }) }],
+    hint: 'pick_target, worth_pulsing and in_range are a good set.',
+    solution: 'Keep pick_target, add in_range(target, max_dist) and worth_pulsing(enemies).',
+  },
+  {
+    title: 'Exam: final wave',
+    body: 'A Rootkit and a flood of forkbombs. Use your Library everywhere.',
+    tasks: [{ text: 'Survive wave 8.', check: null }],
+    hint: 'A laser that prefers "rootkit" keeps the shield down; pulses clear the mites from forkbombs.',
+    solution: 'lib.pick_target(enemies, "rootkit") on your lasers, pulses near the lane merge.',
+  },
+];
+
 const MOTHERBOARD_STARTER = g => {
   const psu = g.addEntity('psu', 1, 5);
   const sock = g.addEntity('socket', 6, 5);
@@ -757,7 +922,7 @@ const MOTHERBOARD_STARTER = g => {
 
 export const MAPS = [
   {
-    id: 'motherboard', name: 'Motherboard', num: 1,
+    id: 'motherboard', name: 'Motherboard', num: 1, label: '1A',
     desc: 'Learn the basics: functions, if, loops, power and targeting.',
     paths: [PATH], core: CORE, start: START, waves: WAVES, lessons: LESSONS,
     hpBase: 1, hpGrowth: WAVE_HP_GROWTH, bonus: WAVE_BONUS,
@@ -766,7 +931,29 @@ export const MAPS = [
     goal: { text: 'Every cannon uses your <code>in_range</code> function, and no pulse ever surged', check: g => turretsOf(g, 'cannon').length > 0 && turretsOf(g, 'cannon').every(t => /in_range\(/.test(t.code)) && !g.stats.surges },
   },
   {
-    id: 'gpu', name: 'Graphics card', num: 2,
+    id: 'motherboard-x', name: 'Motherboard · Overclock', num: 2, label: '1B',
+    desc: 'Exam for chapter 1: a longer path, tougher bugs, one skill per wave.',
+    paths: [[[-0.6, 8.5], [3.5, 8.5], [3.5, 2.5], [8.5, 2.5], [8.5, 8.5], [12.5, 8.5], [12.5, 2.5], [15.6, 2.5]]],
+    core: { c: 15, r: 1, w: 3, h: 3 },
+    start: { credits: 300, core: 20 },
+    waves: [
+      [{ t: 'bug', n: 12, gap: 0.8 }, { t: 'worm', n: 4, gap: 1, delay: 2 }],
+      [{ t: 'worm', n: 12, gap: 0.6 }, { t: 'bug', n: 10, gap: 0.8, delay: 1 }],
+      [{ t: 'mite', n: 30, gap: 0.2 }, { t: 'bug', n: 8, gap: 0.9, delay: 1 }],
+      [{ t: 'bug', n: 16, gap: 0.5 }, { t: 'beetle', n: 4, gap: 2, delay: 1 }, { t: 'worm', n: 10, gap: 0.5, delay: 1 }],
+      [{ t: 'beetle', n: 8, gap: 1.6 }, { t: 'bug', n: 12, gap: 0.6, delay: 1 }],
+      [{ t: 'beetle', n: 10, gap: 1.3 }, { t: 'worm', n: 14, gap: 0.4, delay: 1 }, { t: 'mite', n: 20, gap: 0.18, delay: 1 }],
+      [{ t: 'worm', n: 26, gap: 0.3 }, { t: 'beetle', n: 8, gap: 1.4, delay: 1 }, { t: 'mite', n: 24, gap: 0.15, delay: 1 }],
+      [{ t: 'bug', n: 14, gap: 0.5 }, { t: 'rootkit', n: 1, gap: 1, delay: 2 }, { t: 'beetle', n: 10, gap: 1.2, delay: 3 }, { t: 'mite', n: 36, gap: 0.13, delay: 2 }, { t: 'worm', n: 18, gap: 0.35, delay: 1 }],
+    ],
+    lessons: EXAM1_LESSONS,
+    hpBase: 1.0, hpGrowth: 0.15, bonus: w => 30 + 6 * w,
+    unlock: { cannon: 1, pulse: 1, laser: 1, upgrades: 1 }, library: false,
+    goal: { text: 'No turret ever browned out (capacitor never ran empty)', check: g => turretsOf(g).length > 0 && !g.stats.brownouts },
+    starter: g => { g.addEntity('psu', 1, 5); },
+  },
+  {
+    id: 'gpu', name: 'Graphics card', num: 3, label: '2A',
     desc: 'Two lanes and forkbombs. Write your own functions and a shared library.',
     paths: [
       [[-0.6, 1.5], [3.5, 1.5], [3.5, 5.5], [8.5, 5.5], [8.5, 8.5], [12.5, 8.5], [12.5, 5.5], [15.6, 5.5]],
@@ -789,5 +976,30 @@ export const MAPS = [
     unlock: { cannon: 1, pulse: 1, laser: 1, upgrades: 1 }, library: true,
     goal: { text: 'Every turret uses your Library (<code>import lib</code>)', check: g => turretsOf(g).length > 0 && turretsOf(g).every(t => /\bimport\s+[\w, ]*\blib\b|from\s+lib\s+import/.test(t.code)) },
     starter: g => { g.addEntity('psu', 1, 5); },
+  },
+  {
+    id: 'gpu-x', name: 'Graphics card · Render farm', num: 4, label: '2B',
+    desc: 'Exam for chapter 2: two lanes, forkbomb floods, Library skills.',
+    paths: [
+      [[-0.6, 2.5], [6.5, 2.5], [6.5, 5.5], [15.6, 5.5]],
+      [[-0.6, 8.5], [10.5, 8.5], [10.5, 5.5], [15.6, 5.5]],
+    ],
+    core: { c: 15, r: 4, w: 3, h: 3 },
+    start: { credits: 500, core: 20 },
+    waves: [
+      [{ t: 'bug', n: 10, gap: 1, p: 0 }, { t: 'bug', n: 10, gap: 1, p: 1, with: true, delay: 0.5 }],
+      [{ t: 'worm', n: 14, gap: 0.6, p: 0 }, { t: 'forkbomb', n: 4, gap: 2.4, p: 1, with: true }],
+      [{ t: 'beetle', n: 5, gap: 2.2, p: 1 }, { t: 'bug', n: 12, gap: 0.7, p: 0, with: true }, { t: 'mite', n: 16, gap: 0.22, p: 0, delay: 1 }],
+      [{ t: 'forkbomb', n: 6, gap: 2.2, p: 0 }, { t: 'forkbomb', n: 5, gap: 2.4, p: 1, with: true, delay: 1.2 }],
+      [{ t: 'mite', n: 30, gap: 0.15, p: 1 }, { t: 'worm', n: 16, gap: 0.5, p: 0, with: true }, { t: 'beetle', n: 6, gap: 1.8, p: 0, delay: 1 }],
+      [{ t: 'forkbomb', n: 8, gap: 1.6, p: 1 }, { t: 'beetle', n: 6, gap: 1.9, p: 0, with: true }, { t: 'worm', n: 16, gap: 0.5, p: 0, delay: 1 }],
+      [{ t: 'beetle', n: 8, gap: 1.5, p: 0 }, { t: 'beetle', n: 8, gap: 1.5, p: 1, with: true }, { t: 'mite', n: 30, gap: 0.15, p: 0, delay: 1 }, { t: 'forkbomb', n: 6, gap: 1.4, p: 1, with: true }],
+      [{ t: 'rootkit', n: 1, gap: 1, p: 0 }, { t: 'forkbomb', n: 8, gap: 1.5, p: 1, with: true, delay: 2 }, { t: 'worm', n: 14, gap: 0.5, p: 0, delay: 2 }, { t: 'beetle', n: 6, gap: 1.6, p: 1, with: true }],
+    ],
+    lessons: EXAM2_LESSONS,
+    hpBase: 0.8, hpGrowth: 0.12, bonus: w => 40 + 8 * w, bossMul: 0.7,
+    unlock: { cannon: 1, pulse: 1, laser: 1, upgrades: 1 }, library: true,
+    goal: { text: 'Every turret uses your Library and it has 3 or more functions', check: g => turretsOf(g).length > 0 && libUsers(g).length === turretsOf(g).length && libDefs(g) >= 3 },
+    starter: g => { g.addEntity('psu', 2, 5); },
   },
 ];

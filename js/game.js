@@ -593,7 +593,7 @@ export class Game {
 
   spawn(type, hpMul, lane = 0, dist = 0) {
     const d = ENEMIES[type];
-    const mul = d.boss ? 1 : hpMul;
+    const mul = d.boss ? (this.map.bossMul || 1) : hpMul;   // bosses ignore wave growth; a map can make them weaker or stronger
     const p = this.posAt(dist, lane);
     const e = {
       id: this.nextEnemyId++, type, def: d, dist, lane, x: p.x, y: p.y, vx: 0, vy: 0, dir: Math.atan2(p.dy, p.dx),
@@ -735,6 +735,7 @@ export class Game {
       if (!t) continue;
       if (!s.offline && s.energy <= 0.01) {
         s.offline = true;
+        this.stats.brownouts = (this.stats.brownouts || 0) + 1;
         this.log(t, 'BROWNOUT: capacitor empty, turret halted until 25% charge.', 'err');
         this.fx.push({ type: 'text', x: s.x, y: s.y - 0.5, text: 'BROWNOUT', t: 0, life: 1.2, color: '#ff5b5b' });
         this.emit('sfx', 'brownout');

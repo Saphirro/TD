@@ -1331,7 +1331,7 @@ export class UI {
         : save ? `<span class="warn">In progress · wave ${save.wave + 1}/${m.waves.length}</span>`
         : unlocked ? '<span class="muted">Not started</span>' : `<span class="muted">🔒 Clear ${MAPS[i - 1].name} first</span>`;
       return `<div class="map-card ${unlocked ? '' : 'locked'}">
-        <div class="map-num">${m.num}</div>
+        <div class="map-num">${m.label || m.num}</div>
         <div class="map-info"><b>${m.name}</b><small>${m.desc}</small><small>${m.waves.length} waves · ${status}</small></div>
         <div class="map-acts">
           ${save ? `<button class="primary" data-map="${m.id}" data-save="1">Continue</button>` : ''}

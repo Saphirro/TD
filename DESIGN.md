@@ -155,3 +155,8 @@ Permanent but **small** boosts. All of them together cost **35 stars**; 6 exist 
 - Library capacity: functions kept with `keeps:` are offered on maps with a Library; with more functions than capacity a "Pack your Library" window lets the player choose.
 - Bots: `S.report(map, boost)` tests with a boost set, e.g. `labBoost({ core: 1, budget: 1, psu: 1 })`.
 - Map 2 results: no boosts: learner wins (core 10/20), others lose. 3 stars (core, budget, psu): learner 12/22, others still lose. **All boosts maxed (35 stars): even templatesOnly wins**, so maps in later chapters must be tuned for the stars a player can have by then.
+
+### Chapters 1 and 2 complete (2026-11-25)
+- **1B Motherboard · Overclock** (`motherboard-x`): 8 waves, one skill check per wave (careful cannons, in_range again, pulse discipline, power plan, laser + power, beetles first, lead the target, Rootkit). ★★★: no turret ever browned out. Bots: learner wins (core 8/20), others lose at waves 6-8.
+- **2B Graphics card · Render farm** (`gpu-x`): 8 waves, two lanes that merge late, Library checks (lib everywhere, True/False helper, dictionary, sorted, defaults, f-string, 3 helpers). ★★★: every turret uses lib and the Library has 3+ functions. `bossMul: 0.7` (new per-map boss strength) because towers spread over two separate lanes. Bots: learner wins (core 8/20), others lose at waves 6-7.
+- Campaign order: 1A → 1B → 2A → 2B (each unlocks the next; "Play anyway" still works). Cards show labels like "1B".
