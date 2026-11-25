@@ -926,6 +926,7 @@ export class UI {
     const L = g.map.lessons[idx];
     $('#lesson-num').textContent = g.lessonLabel(idx);
     $('#lesson-title').textContent = L.title;
+    if (this._shownLesson !== `${g.map.id}:${idx}`) { this._shownLesson = `${g.map.id}:${idx}`; $('#guide .pane-body').scrollTop = 0; }   // new lesson: start reading at the top
     $('#lesson-body').innerHTML = L.body;
     $('#lesson-tasks').innerHTML = L.tasks.map((t, i) => `<div class="task" data-i="${i}"><span class="tick">✓</span><div><b>Task${L.tasks.length > 1 ? ` ${i + 1}` : ''}</b><div>${t.text}</div></div></div>`).join('');
     $('#lesson-hint').hidden = true; $('#lesson-hint').innerHTML = `💡 ${esc(L.hint)}`;
@@ -1027,6 +1028,7 @@ export class UI {
   flashGuide() {
     const el = this.el.guide;
     el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
+    el.querySelector('.pane-body').scrollTop = 0;   // a new lesson always starts at the top
     if ((window.innerWidth > 860 || document.body.classList.contains('phone')) && this.editorFor == null) this.el.side.classList.add('open');   // phone: the new lesson shows as a card
     $('#lesson-go').textContent = "I'm ready!";   // the card closes with this after a wave
   }
