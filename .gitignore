@@ -1,0 +1,4 @@
+# local test notes / editor files
+*.log
+.DS_Store
+Thumbs.db

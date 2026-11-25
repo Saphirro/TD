@@ -1,0 +1,11 @@
+{
+  "name": "Circuit Defense",
+  "short_name": "CircuitTD",
+  "description": "Tower defense where you program turrets in real Python.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#030b09",
+  "theme_color": "#04110d",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
