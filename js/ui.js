@@ -1088,6 +1088,8 @@ export class UI {
     }
     this.renderGuide();
     this.storeSet(this.pk('lastMap'), id);
+    // phone: show the current lesson as a card when a map starts or continues (like after each wave)
+    if (document.body.classList.contains('phone')) setTimeout(() => this.flashGuide(), 300);
   }
 
   campaignModal() {
