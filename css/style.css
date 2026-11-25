@@ -491,3 +491,16 @@ body:not(.phone) .tap { display: none !important; }
 /* phones have no toolbar: the Library gets a top-bar button on maps that have one */
 #btn-lib { display: none; }
 body.phone.has-lib #btn-lib { display: grid; }
+
+/* ---------- scrollbars: slim and dark everywhere (no bright white bars) ---------- */
+* { scrollbar-width: thin; scrollbar-color: #2f5a4a transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #2f5a4a; border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: #3f7a64; background-clip: padding-box; }
+::-webkit-scrollbar-corner { background: transparent; }
+.CodeMirror-scrollbar-filler, .CodeMirror-gutter-filler { background: transparent !important; }
+.CodeMirror-hscrollbar, .CodeMirror-vscrollbar { scrollbar-color: #2f5a4a #050f0b; }
+
+/* hint / solution boxes: wrap long lines instead of scrolling sideways */
+.hintbox pre { white-space: pre-wrap; word-break: break-word; overflow-x: visible; }
