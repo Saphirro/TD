@@ -52,6 +52,7 @@
           <div><span class="kicker" id="ed-kicker"></span><h2 id="ed-title"></h2></div>
           <button id="ed-paused" class="chip paused-chip" hidden title="The game is paused while you edit. Click to keep it running.">⏸ Paused · ▶ play</button>
           <span id="ed-status" class="chip">Running</span>
+          <button class="icon mobile-only" id="ed-guide" title="Show the lesson under the code">📘</button>
           <button class="icon" id="ed-close" title="Close (Esc)">✕</button>
         </div>
         <div id="ed-task" class="ed-task" hidden></div>
@@ -81,7 +82,7 @@
       <section id="guide" class="pane">
         <div class="pane-head">
           <div><span class="kicker">Lesson <b id="lesson-num">1</b></span><h2 id="lesson-title"></h2></div>
-          <button class="icon mobile-only" data-close-side>✕</button>
+          <button class="icon mobile-only sheet-toggle" title="Show more / less">▴</button>
         </div>
         <div class="pane-body">
           <div id="guide-tip" class="tipbox" hidden></div>

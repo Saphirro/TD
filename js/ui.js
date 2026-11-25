@@ -250,8 +250,24 @@ export class UI {
     // the "Paused while editing" banner is a button too
     this.el.banner.addEventListener('click', () => { if (this.planPaused) this.editRun = true; else this.userPaused = false; });
     document.getElementById('ed-paused').addEventListener('click', () => { this.editRun = true; this.userPaused = false; });
+    const phone = () => window.innerWidth <= 860;
+    // phone + editor open: show/hide the lesson under the code (split half/half)
+    this.toggleSplit = () => {
+      document.body.classList.toggle('ed-split');
+      try { localStorage.setItem('cd.split', document.body.classList.contains('ed-split') ? '1' : '0'); } catch { /* ignore */ }
+      this.updateTip();
+      setTimeout(() => this.cm.refresh(), 50);
+    };
+    try { if (localStorage.getItem('cd.split') === '1') document.body.classList.add('ed-split'); } catch { /* ignore */ }
+    $('#ed-guide').addEventListener('click', () => this.toggleSplit());
     $('#btn-guide').addEventListener('click', () => {
-      if (this.editorFor != null && window.innerWidth <= 860) this.closeEditor();   // phone: one full-screen panel at a time
+      if (this.editorFor != null && phone()) { this.toggleSplit(); return; }
+      this.el.side.classList.toggle('open');
+      setTimeout(() => this.r.resize(), 220);
+    });
+    // phone: the lesson panel is a bottom sheet; tapping its header makes it bigger / smaller
+    $('#guide > .pane-head').addEventListener('click', () => {
+      if (!phone() || this.editorFor != null) return;
       this.el.side.classList.toggle('open');
       setTimeout(() => this.r.resize(), 220);
     });
@@ -634,7 +650,7 @@ export class UI {
     if (!lib) this.select(id); else this.select(null);
     // floating window over the board: the board and lesson panel stay where they are (no resize, no flicker)
     this.el.editor.hidden = false;
-    if (window.innerWidth <= 860) this.el.side.classList.remove('open');   // phone: editor is full screen
+    document.body.classList.add('ed-open');
     $('#ed-kicker').textContent = lib
       ? 'Shared code · every turret can use it with import lib'
       : `${TURRETS[t.type].name} · Socket #${s.id} · modules: ${TURRETS[t.type].modules.join(', ')}${this.g.map.library ? ', lib' : ''}`;
@@ -686,6 +702,7 @@ export class UI {
     if (this.editorFor == null) return;
     this.editorFor = null;
     this.el.editor.hidden = true;
+    document.body.classList.remove('ed-open');
     this.renderInfo();
     this.updateTip();
   }
@@ -833,7 +850,10 @@ export class UI {
       el.innerHTML = gel.innerHTML = tip ? `<span>💡</span><span>${esc(text)}</span>` : '';
     }
     // tip lives in the lesson panel when it's visible, otherwise floats over the board
-    const guideVisible = this.el.side.classList.contains('open') && !this.el.guide.hidden && getComputedStyle(this.el.side).display !== 'none' && this.el.side.offsetWidth > 0;
+    // desktop: side panel open · phone: bottom sheet is always there, but hidden behind a full-screen editor unless split
+    const side = this.el.side, phone = window.innerWidth <= 860;
+    const shown = !this.el.guide.hidden && getComputedStyle(side).display !== 'none' && side.offsetWidth > 50 && side.offsetHeight > 50;
+    const guideVisible = shown && (phone ? (this.editorFor == null || document.body.classList.contains('ed-split')) : side.classList.contains('open'));
     gel.hidden = !tip || !guideVisible;
     // lesson panel hidden (phone, or closed)? show the current task inside the editor instead
     const edTask = $('#ed-task');

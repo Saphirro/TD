@@ -247,8 +247,18 @@ h4 { margin: 20px 0 8px; font-size: 11px; text-transform: uppercase; letter-spac
   .stat b { font-size: 14px; }
   .speed button { padding: 4px 7px; }
   #btn-wave { padding: 7px 10px; font-size: 13px; }
-  #side, #side.open { position: fixed; inset: 0; width: auto; z-index: 30; border: 0; display: none; }
-  #side.open { display: flex; }
+  /* lesson panel = bottom sheet under the board: a peek (current task, scrollable) or, tapped, half the screen */
+  #main { flex-direction: column; }
+  #side, #side.open { position: relative; width: auto; height: 172px; flex: none; display: flex; border-left: 0; border-top: 1px solid var(--line2); z-index: 5; transition: height .2s ease; }
+  #side.open { height: 52vh; }
+  #guide > .pane-head { cursor: pointer; padding: 6px 14px 6px; position: relative; }
+  #guide > .pane-head::before { content: ""; position: absolute; top: 3px; left: 50%; width: 36px; height: 4px; margin-left: -18px; border-radius: 2px; background: #2f5a4a; }
+  #guide > .pane-head h2 { font-size: 15px; }
+  #guide .pane-body { display: flex; flex-direction: column; padding: 8px 14px 16px; }
+  #guide .pane-body > * { order: 2; }
+  #guide #lesson-tasks, #guide #guide-tip { order: 1; }   /* what to do now comes first in the peek */
+  #side .sheet-toggle { display: grid !important; }
+
   .pane { min-width: 0; }
   #editor.float { position: fixed; inset: 0 !important; width: auto !important; height: auto !important; min-width: 0; border-radius: 0; border: 0; z-index: 30; resize: none; }
   #editor.float .pane-head { cursor: default; }
@@ -288,4 +298,24 @@ h4 { margin: 20px 0 8px; font-size: 11px; text-transform: uppercase; letter-spac
   .tool .lb { font-size: 9.5px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
   .tool .cost { font-size: 9.5px; }
   .tool .lock { font-size: 8px; top: 1px; right: 2px; }
+}
+
+/* ---------- code editor on phones ---------- */
+@media (max-width: 860px) {
+  #editor.float .pane-head { padding: 6px 10px; gap: 6px; align-items: center; }
+  #ed-kicker { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 9.5px; letter-spacing: .08em; }
+  #editor .pane-head h2 { font-size: 13px; margin: 0; }
+  #editor .pane-head .chip { font-size: 11px; padding: 2px 7px; }
+  #editor .pane-head button.icon { width: 32px; height: 32px; }
+  #editor .tabs button { padding: 6px 12px; }
+  .ed-actions { flex-wrap: nowrap; gap: 5px; padding: 6px 8px; }
+  .ed-actions button, .ed-actions select { padding: 6px 9px; font-size: 13px; }
+  #ed-copy { max-width: 100px; min-width: 0; }
+  #console { height: 84px; }
+  /* split: code on top, lesson below (📘 in the editor header) */
+  body.ed-open.ed-split #editor.float { bottom: 46vh !important; }
+  body.ed-open.ed-split #side { position: fixed; left: 0; right: 0; bottom: 0; height: 46vh; z-index: 31; }
+  body.ed-open.ed-split #ed-task { display: none !important; }
+  body.ed-open.ed-split #console { height: 56px; }
+  body.ed-split #ed-guide { background: #143a2d; border-color: var(--accent); }
 }
