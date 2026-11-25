@@ -9,12 +9,15 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const nameOf = e => (e.type === 'socket' ? (e.turret ? `${TURRETS[e.turret.type].name} #${e.id}` : `Socket #${e.id}`) : `${BUILDINGS[e.type].name} #${e.id}`);
 
-// code chips per turret type (tap to insert at the cursor)
+// code chips: building blocks (words and symbols), not finished lines. Only the tiny commands
+// every turret needs (like cannon.fire()) are whole. [label, text inserted] or just the text.
 const CHIPS = {
-  common: ['if ', ':', '==', '>=', '<', 'len(enemies)', 'enemies[0]', 'target', 'return', 'print(', ')'],
-  cannon: ['cannon.fire()', 'motor.aim(target)', 'motor.aimed(target)', 'cannon.damage = '],
-  pulse: ['pulse.fire()', 'for e in enemies:', 'count = 0', 'count = count + 1', 'pulse.strength = '],
-  laser: ['laser.fire(target)', 'laser.stop()', 'motor.aimed(target)', 'laser.power = '],
+  common: [['if', 'if '], ['for', 'for '], ['in', ' in '], ['def', 'def '], ['return', 'return '], ':', '(', ')', '.', ',',
+    ['=', ' = '], ['==', ' == '], ['<=', ' <= '], ['>=', ' >= '], ['<', ' < '], ['>', ' > '], ['and', ' and '], ['not', 'not '],
+    'True', 'False', 'target', 'enemies', 'len', 'print', ['+', ' + ']],
+  cannon: ['cannon.fire()', 'motor', 'cannon', 'radar', 'aim', 'aimed', 'distance', 'damage'],
+  pulse: ['pulse.fire()', 'pulse', 'radar', 'count', 'e', 'strength'],
+  laser: ['laser.stop()', 'laser', 'motor', 'radar', 'aimed', 'fire', 'power'],
 };
 
 export function installPhone(ui) {
@@ -161,6 +164,10 @@ export function installPhone(ui) {
     if (e.type === 'socket' && e.turret) items.push({ icon: '✎', label: 'Code', cls: 'primary', tool: 'code', fn: () => ui.openEditor(e.id) });
     if (e.type === 'socket' && !e.input) items.push({ icon: '🔌', label: 'Power', tool: 'power', fn: () => setMode({ kind: 'to', id: e.id }) });
     if (PORTS[e.type] && e.outputs.length < PORTS[e.type] && (e.type === 'psu' || e.input)) items.push({ icon: '➜', label: 'Wire out', tool: 'wire', fn: () => setMode({ kind: 'from', id: e.id }) });
+    const u = g.upgradeInfo(e);
+    if (u && !u.max) items.push({ icon: '⬆', label: u.locked ? `W${u.locked}` : 'Upgrade', cost: u.locked ? null : u.cost, tool: 'upgrade',
+      disabled: !!u.locked || g.credits < u.cost, why: u.locked ? `Upgrades unlock at wave ${u.locked}.` : `Need ${u.cost} credits.`,
+      fn: () => { g.upgrade(e); ui.renderInfo(); } });
     items.push({ icon: 'ℹ', label: 'Info', fn: () => { ui.select(e.id); ui.el.info.classList.add('show-phone'); } });
     if (e.input) items.push({ icon: '⏏', label: 'Unplug', fn: () => { g.unplug(e); ui.renderInfo(); } });
     items.push({ icon: '✕', label: e.turret ? 'Sell turret' : 'Sell', cls: 'danger', fn: () => { g.sell(e); if (!g.ents.has(e.id)) ui.select(null); else ui.renderInfo(); } });
@@ -188,8 +195,8 @@ export function installPhone(ui) {
     else {
       const idx = g.lessonIndex(), L = g.map.lessons[idx];
       const i = L.tasks.findIndex((t, k) => !ui.lessonDone.has(`${idx}:${k}`) && !(t.check && t.check(g)));
-      html = i >= 0 ? `<span class="cl">Lesson ${idx + 1}</span> ${L.tasks[i].text}`
-        : g.phase === 'build' ? `<span class="cl">Lesson ${idx + 1}</span> Done! Press <b>Start wave</b> when you are ready.` : '';
+      html = i >= 0 ? `<span class="cl">Lesson ${g.lessonLabel(idx)}</span> ${L.tasks[i].text}`
+        : g.phase === 'build' ? `<span class="cl">Lesson ${g.lessonLabel(idx)}</span> Done! Press <b>Start wave</b> when you are ready.` : '';
     }
     const key = html + cancel;
     if (!force && key === coachKey) return;
@@ -209,7 +216,7 @@ export function installPhone(ui) {
     const type = T && !T.lib ? T.t.type : null;
     const chips = [...(CHIPS[type] || []), ...CHIPS.common];
     bar.innerHTML = '<button class="chip-k" data-k="kbd" title="Show the keyboard">⌨</button><button class="chip-k" data-k="tab">⇥</button><button class="chip-k" data-k="nl">↵</button><button class="chip-k" data-k="bs">⌫</button>'
-      + chips.map(c => `<button class="chip-c" data-c="${esc(c)}">${esc(c.trim() || c)}</button>`).join('');
+      + chips.map(c => { const [label, text] = Array.isArray(c) ? c : [c, c]; return `<button class="chip-c" data-c="${esc(text)}">${esc(label)}</button>`; }).join('');
   }
   bar.addEventListener('pointerdown', e => e.preventDefault());   // keep the cursor where it is
   bar.addEventListener('click', e => {

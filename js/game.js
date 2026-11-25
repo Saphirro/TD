@@ -2,7 +2,7 @@
 // Game simulation: grid, buildings, power network, turrets, enemies, waves.
 // ---------------------------------------------------------------------------
 import {
-  COLS, ROWS, CODE_HZ, SELL_REFUND, WIRE_COST_PER_TILE, POWER, LIMITS, BUILDINGS, PORTS,
+  COLS, ROWS, CODE_HZ, SELL_REFUND, WIRE_COST_PER_TILE, POWER, LIMITS, BUILDINGS, PORTS, UPGRADES, EXTRA_MODULES,
   TURRETS, ENEMIES, TEMPLATES, MAPS, DEFAULT_LIBRARY,
 } from './data.js';
 
@@ -87,7 +87,7 @@ export class Game {
   // ---- save / load (only between waves) ------------------------------------
   serialize() {
     const ents = [...this.ents.values()].map(e => ({
-      id: e.id, type: e.type, c: e.c, r: e.r, spent: e.spent,
+      id: e.id, type: e.type, c: e.c, r: e.r, spent: e.spent, level: e.level || 1,
       energy: e.type === 'socket' ? Math.round(e.energy) : undefined,
       turret: e.turret ? { type: e.turret.type, code: e.turret.code, draft: e.turret.draft } : undefined,
     }));
@@ -110,6 +110,7 @@ export class Game {
     for (const e of d.ents) {
       const n = this.addEntity(e.type, e.c, e.r);
       n.spent = e.spent;
+      this.applyLevel(n, e.level || 1);
       idMap[e.id] = n;
       if (n.type === 'socket') { n.energy = e.energy ?? 0; n.offline = n.energy < n.cap * POWER.brownoutResume; }
     }
@@ -136,7 +137,28 @@ export class Game {
   enemyById(id) { return this.enemies.find(e => e.id === id); }
   canPlace(c, r) { return c >= 0 && r >= 0 && c < COLS && r < ROWS && !this.blocked[r][c] && !this.grid[r][c]; }
   nextWave() { return this.wave + 1; }
-  lessonIndex() { return Math.min(this.wave, this.map.lessons.length - 1); }
+  // Lessons belong to waves. A "half" lesson (e.g. 3½) shares the wave of the lesson before it and
+  // shows up once that lesson's tasks are done. this.lessonDone is the UI's set of finished tasks.
+  lessonPlan() {
+    const L = this.map.lessons;
+    if (this._planFor !== L) {
+      let wave = 0, n = 0;
+      this._plan = L.map(l => { if (!l.half) { wave++; n++; } return { wave, label: l.half ? `${n}½` : `${n}` }; });
+      this._planFor = L;
+    }
+    return this._plan;
+  }
+  lessonLabel(i = this.lessonIndex()) { return this.lessonPlan()[i]?.label ?? String(i + 1); }
+  lessonIndex() {
+    const L = this.map.lessons, plan = this.lessonPlan(), done = this.lessonDone || new Set();
+    const lastWave = plan[plan.length - 1].wave, w = Math.min(this.wave + 1, lastWave);
+    const ids = plan.map((p, i) => (p.wave === w ? i : -1)).filter(i => i >= 0);
+    for (const i of ids) {
+      const open = L[i].tasks.some((t, k) => !done.has(`${i}:${k}`));   // the UI marks tasks done (with a toast) first
+      if (open) return i;
+    }
+    return ids[ids.length - 1];
+  }
   lesson() { return this.map.lessons[this.lessonIndex()]; }
   unlockWave(type) { return this.map.unlock[type] ?? 99; }
   isUnlocked(type) { return this.unlockWave(type) <= this.nextWave(); }
@@ -162,8 +184,9 @@ export class Game {
   // ---- building -----------------------------------------------------------
   addEntity(type, c, r) {
     const e = { id: this.nextId++, type, c, r, x: c + 0.5, y: r + 0.5, input: null, outputs: [], spent: BUILDINGS[type].cost };
-    if (type === 'psu') Object.assign(e, { maxW: POWER.psuW, loadW: 0, loadS: 0, demandW: 0, overload: false, fan: 0 });
-    if (type === 'socket') Object.assign(e, { cap: POWER.socketCap, energy: 0, inW: 0, inS: 0, cpu: POWER.socketCpu, turret: null, offline: true });
+    if (type === 'psu') Object.assign(e, { level: 1, maxW: UPGRADES.psu[0].maxW, loadW: 0, loadS: 0, demandW: 0, overload: false, fan: 0 });
+    if (type === 'socket') Object.assign(e, { energy: 0, inW: 0, inS: 0, turret: null, offline: true });
+    if (UPGRADES[type]) this.applyLevel(e, 1);   // level 1 values: PSU maxW · socket chargeW, cap, slots, cpu
     this.ents.set(e.id, e);
     this.grid[r][c] = e.id;
     return e;
@@ -186,6 +209,36 @@ export class Game {
   }
 
   fail(msg) { this.emit('toast', msg, 'bad'); return null; }
+
+  // ---- upgrades: PSU output, socket charging speed + capacitor --------------------------
+  applyLevel(e, level) {
+    const U = UPGRADES[e.type]; if (!U) return;
+    e.level = Math.max(1, Math.min(U.length, level));
+    Object.assign(e, U[e.level - 1]);
+    delete e.cost;   // (the level table has a cost field; it isn't a property of the part)
+  }
+  // what the next upgrade of this part would be, or why there is none
+  upgradeInfo(e) {
+    const U = UPGRADES[e?.type]; if (!U) return null;
+    const next = U[(e.level || 1)];
+    const at = this.map.unlock?.upgrades ?? 99;
+    if (!next) return { max: true };
+    return { next, cost: next.cost, locked: at > this.nextWave() ? at : 0 };
+  }
+  upgrade(e) {
+    const u = this.upgradeInfo(e);
+    if (!u) return this.fail('This part has no upgrades.');
+    if (u.max) return this.fail('Already fully upgraded.');
+    if (u.locked) return this.fail(`Upgrades unlock at wave ${u.locked}.`);
+    if (this.credits < u.cost) return this.fail(`Need ${u.cost} credits for this upgrade.`);
+    this.credits -= u.cost;
+    e.spent += u.cost;
+    this.applyLevel(e, e.level + 1);
+    this.burst(e.x, e.y, '#ffcf6a', 16, 2);
+    this.emit('sfx', 'upload');
+    this.emit('change');
+    return e;
+  }
 
   // what building `type` on (c, r) would do. Building on a wire splices the part in:
   // the source side of the old wire becomes the new part's input (reused, free), and a NEW wire
@@ -401,10 +454,27 @@ export class Game {
     t.logVersion = (t.logVersion || 0) + 1;
   }
 
+  // extra modules (power, meter, lib) each need a free slot on the socket; base modules are free
+  extrasIn(src) {
+    const used = [];
+    src.split('\n').forEach((l, i) => {
+      let m = l.match(/^\s*import\s+([^#\n]+)/);
+      const names = m ? m[1].split(',').map(s => s.trim().split(/\s+as\s+/)[0]) : (m = l.match(/^\s*from\s+(\w+)\s+import/)) ? [m[1]] : [];
+      for (const n of names) if (EXTRA_MODULES.includes(n) && !used.some(u => u.name === n)) used.push({ name: n, line: i + 1 });
+    });
+    return used;
+  }
+  slotCheck(sock, src) {
+    const used = this.extrasIn(src), slots = sock.slots || 1;
+    if (used.length <= slots) return null;
+    return { ok: false, error: { line: used[slots].line,
+      msg: `Module slots full: this socket has ${slots} slot${slots === 1 ? '' : 's'} for extra modules, but the program uses ${used.map(u => u.name).join(', ')}. Upgrade the socket (⬆) for more slots, or remove one of them from the import line.` } };
+  }
+
   compileTurret(sock, src) {
     const t = sock.turret;
     if (!this.py.ready) return { ok: false, error: { msg: 'Python is still loading…', line: null } };
-    const r = this.py.compile(sock.id, t.type, src);
+    const r = this.slotCheck(sock, src) || this.py.compile(sock.id, t.type, src);
     (r.out || []).forEach(l => this.log(t, l, 'out'));
     (r.warns || []).forEach(l => this.log(t, l, 'warn'));
     if (r.ok) {
@@ -621,7 +691,7 @@ export class Game {
     for (const w of this.wires.values()) { w.a = 0; w._d = 0; }
     // demand of a part = its own charging need + whatever its outputs want (each capped by its wire)
     const demand = (e) => {
-      e._own = e.type === 'socket' ? Math.max(0, Math.min(POWER.socketChargeW, (e.cap - e.energy) / dt)) : 0;
+      e._own = e.type === 'socket' ? Math.max(0, Math.min(e.chargeW, (e.cap - e.energy) / dt)) : 0;
       let sum = e._own;
       for (const wid of e.outputs) {
         const w = this.wires.get(wid);
@@ -673,7 +743,7 @@ export class Game {
   // w.peakW / psu.peakW = what that wire / PSU would have to carry (not capped, so overloads show)
   updatePeaks() {
     const peak = e => {
-      let sum = e.type === 'socket' ? (e.turret ? POWER.socketChargeW : POWER.idleW) : 0;
+      let sum = e.type === 'socket' ? (e.turret ? e.chargeW : POWER.idleW) : 0;
       for (const wid of e.outputs) { const w = this.wires.get(wid); w.peakW = peak(this.ents.get(w.to)); sum += w.peakW; }
       return sum;
     };
@@ -813,9 +883,25 @@ export class Game {
     t.pulseT = 0.5;
     this.emit('sfx', 'pulse');
     this.fx.push({ type: 'ring', x: s.x, y: s.y, t: 0, life: 0.45, r, color: TURRETS.pulse.color });
+    let hits = 0;
     for (const e of [...this.enemies]) {
-      if (Math.hypot(e.x - s.x, e.y - s.y) <= r + e.radius) this.damage(e, t.cfg.strength);
+      if (Math.hypot(e.x - s.x, e.y - s.y) <= r + e.radius) { this.damage(e, t.cfg.strength); hits++; }
     }
+    // a pulse is meant for groups: hitting 0 or 1 enemy sends a power SURGE back through the network,
+    // draining energy from every other socket on the same PSU (teaches: check how many are in range first)
+    if (hits <= 1) this.surge(s, POWER.pulseSurgeJ, hits);
+  }
+
+  // drain energy from the other sockets that share s's power source
+  surge(s, joules, hits = 1) {
+    let root = s;
+    while (root.input) { const w = this.wires.get(root.input); if (!w) break; root = this.ents.get(w.from); }
+    const hit = [];
+    const walk = e => { for (const wid of e.outputs) { const n = this.ents.get(this.wires.get(wid).to); if (n.type === 'socket' && n !== s) hit.push(n); walk(n); } };
+    walk(root);
+    for (const n of hit) { this.drain(n, joules); this.spark(n.x, n.y, '#ffcf4a', 4); }
+    this.fx.push({ type: 'text', x: s.x, y: s.y - 0.6, text: 'SURGE', t: 0, life: 1, color: '#ffcf4a', small: true });
+    if (s.turret) this.log(s.turret, `SURGE: the pulse hit ${hits ? 'only one enemy' : 'no enemy'} and drained ${joules} J from ${hit.length} other socket${hit.length === 1 ? '' : 's'} on this PSU. Fire only when several enemies are in range.`, 'warn');
   }
 
   enemyStep(dt) {
@@ -887,7 +973,7 @@ export class Game {
   worstCase(s) {
     const est = this.estimate(s);
     if (!est) return null;
-    let supply = s.input ? POWER.socketChargeW : 0;
+    let supply = s.input ? s.chargeW : 0;
     let cur = s;
     while (cur && cur.input) {
       const w = this.wires.get(cur.input);

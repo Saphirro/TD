@@ -2,7 +2,7 @@
 // DOM user interface: HUD, toolbar, info card, code editor, lessons, modals.
 // ---------------------------------------------------------------------------
 import { Sfx } from './audio.js';
-import { BUILDINGS, TURRETS, DOCS, TEMPLATES, POWER, ENEMIES, PORTS, MAPS, DEFAULT_LIBRARY, SELL_REFUND, WIRE_COST_PER_TILE } from './data.js';
+import { BUILDINGS, TURRETS, DOCS, TEMPLATES, POWER, ENEMIES, PORTS, MAPS, DEFAULT_LIBRARY, SELL_REFUND, WIRE_COST_PER_TILE, UPGRADES } from './data.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -58,6 +58,7 @@ function hintFor(msg) {
   if (/has no attribute|has no setting/.test(msg)) return 'That name does not exist on this module. See the Docs tab.';
   if (/positional argument/.test(msg)) return 'Wrong number of values in a function call. See the Docs tab.';
   if (/BROWNOUT/.test(msg)) return 'Use less energy (lower settings) or give this socket more supply.';
+  if (/SURGE/.test(msg)) return 'Count the enemies in range first (len(enemies) or a for loop) and only call pulse.fire() when there are 2 or more.';
   if (/LOW POWER/.test(msg)) return 'Lower the damage / strength / power setting, save shots for big targets (power.percent), or give this socket its own wire or another PSU.';
   if (/CPU overrun/.test(msg)) return 'Your loop runs too many lines. Break out early, or loop over fewer enemies.';
   return null;
@@ -117,6 +118,17 @@ function makeEditor(host, onChange) {
       insert: text => { const ro = cm.getOption('readOnly'); cm.setOption('readOnly', false); cm.replaceSelection(text); cm.setOption('readOnly', ro); },
       command: name => { const ro = cm.getOption('readOnly'); cm.setOption('readOnly', false); cm.execCommand(name); cm.setOption('readOnly', ro); },
       setKeyboard: on => { cm.setOption('readOnly', !on); if (on) cm.focus(); },
+      // hint lines shown faintly in the code (the player still types them): [{ line, above, text, change }]
+      ghosts: list => {
+        for (const w of cm._ghostW || []) w.clear();
+        cm._ghostW = list.map(gh => {
+          const el = document.createElement('div');
+          el.className = `cm-ghost${gh.change ? ' change' : ''}`;
+          el.innerHTML = `<pre></pre><span class="gl">${gh.change ? '← change the line above to this' : '← type this line'}</span>`;
+          el.querySelector('pre').textContent = gh.text;
+          return cm.addLineWidget(gh.line, el, { above: !!gh.above });
+        });
+      },
       // mark the lines the current lesson task is about (gold bar), or clear with null
       focusLines: re => {
         const lines = cm.getValue().split('\n');
@@ -137,7 +149,7 @@ function makeEditor(host, onChange) {
   ta.addEventListener('keydown', e => {
     if (e.key === 'Tab') { e.preventDefault(); const s = ta.selectionStart; ta.setRangeText('    ', s, ta.selectionEnd, 'end'); onChange(ta.value); }
   });
-  return { get: () => ta.value, set: v => { ta.value = v; }, refresh() {}, mark() {}, focus: () => ta.focus(), gotoTodo() {}, focusLines() {},
+  return { get: () => ta.value, set: v => { ta.value = v; }, refresh() {}, mark() {}, focus: () => ta.focus(), gotoTodo() {}, focusLines() {}, ghosts() {},
     insert: t => { ta.setRangeText(t, ta.selectionStart, ta.selectionEnd, 'end'); onChange(ta.value); },
     command: n => { if (n === 'newlineAndIndent') { ta.setRangeText('\n', ta.selectionStart, ta.selectionEnd, 'end'); } else if (n === 'delCharBefore' && ta.selectionStart > 0) { ta.setRangeText('', ta.selectionStart - 1, ta.selectionEnd, 'end'); } onChange(ta.value); },
     setKeyboard: on => { ta.readOnly = !on; if (on) ta.focus(); } };
@@ -154,6 +166,8 @@ export class UI {
     this.userPaused = false;
     this.editorFor = null;
     this.tab = 'code';
+    // finished lesson tasks; the game reads the same set to know when a half-lesson (3½) is due
+    Object.defineProperty(this, 'lessonDone', { get: () => this._lessonDone, set: v => { this._lessonDone = v; this.g.lessonDone = v; } });
     this.lessonDone = new Set();
     this.liveT = 0; this.checkT = 0;
     this.audio = new Sfx();
@@ -424,6 +438,78 @@ export class UI {
     this.renderInfo();
   }
 
+  // ---- functions the player wrote travel with them (into the map 2 Library) ------------------
+  // copies `def name(...)` and its indented lines out of a turret program into the player's profile
+  keepFunction(name) {
+    for (const s of this.g.sockets()) {
+      const code = s.turret?.compiled && s.turret.code;
+      if (!code) continue;
+      const lines = code.split('\n'), i = lines.findIndex(l => new RegExp(`^def\\s+${name}\\s*\\(`).test(l));
+      if (i < 0) continue;
+      let j = i + 1;
+      while (j < lines.length && (lines[j].trim() === '' || /^\s/.test(lines[j]))) j++;
+      while (j > i + 1 && lines[j - 1].trim() === '') j--;
+      const fn = lines.slice(i, j).join('\n');
+      const mine = this.storeGet(this.pk('myFunctions')) || {};
+      mine[name] = fn;
+      if (!this.noSave) this.storeSet(this.pk('myFunctions'), mine);
+      return fn;
+    }
+    return null;
+  }
+
+  // a new map with a Library starts with the player's own functions in it
+  libraryWithMine() {
+    const mine = this.storeGet(this.pk('myFunctions')) || {};
+    const fns = Object.values(mine);
+    if (!fns.length) return null;
+    return `${DEFAULT_LIBRARY.trimEnd()}\n\n# Written by you on an earlier map:\n${fns.join('\n\n')}\n`;
+  }
+
+  // ---- hints: reveal the next line of the answer faintly in the editor ------------------
+  // Each Hint press shows one more line (task.ghost steps). A line disappears once the player has
+  // typed it. Steps: { after | before | change: regex of the line it belongs to, text }.
+  currentTask() {
+    const g = this.g, idx = g.lessonIndex(), L = g.map.lessons[idx];
+    const i = L.tasks.findIndex((t, k) => !this.lessonDone.has(`${idx}:${k}`) && !(t.check && t.check(g)));
+    return i < 0 ? null : { key: `${idx}:${i}`, task: L.tasks[i], lesson: L };
+  }
+
+  ghostDone(step, lines) {
+    const norm = s => s.replace(/\s+/g, ' ').trim();
+    const want = norm(step.text);
+    return lines.some(l => norm(l) === want);
+  }
+
+  refreshGhosts() {
+    const T = this.edTarget(), cur = this.currentTask();
+    if (!T || T.lib || !cur?.task.ghost || this.hintFor?.key !== cur.key) { this.cm.ghosts([]); return; }
+    const lines = this.cm.get().split('\n'), out = [];
+    cur.task.ghost.slice(0, this.hintFor.n).forEach(st => {
+      if (this.ghostDone(st, lines)) return;
+      const re = st.after || st.before || st.change;
+      const line = lines.findIndex(l => re.test(l));
+      if (line >= 0) out.push({ line, above: !!st.before, text: st.text, change: !!st.change });
+    });
+    this.cm.ghosts(out);
+  }
+
+  hint() {
+    const cur = this.currentTask();
+    if (!cur) { this.toast('All tasks of this lesson are done.', 'good'); return; }
+    const steps = cur.task.ghost;
+    if (!steps || this.editorFor == null) { this.toast(`💡 ${cur.lesson.hint}`, 'info'); return; }
+    if (this.hintFor?.key !== cur.key) this.hintFor = { key: cur.key, n: 0 };
+    const lines = this.cm.get().split('\n');
+    // show the next step that isn't typed yet
+    let n = this.hintFor.n;
+    while (n < steps.length && this.ghostDone(steps[n], lines)) n++;
+    if (n >= steps.length) { this.toast('Every hint line is shown. Type them in, then Upload.', 'info'); this.refreshGhosts(); return; }
+    this.hintFor.n = n + 1;
+    this.refreshGhosts();
+    this.sfx('task');
+  }
+
   // ---- lesson highlights -------------------------------------------------------------
   // the first unfinished task of the current lesson decides what glows: board parts (renderer),
   // toolbar buttons, info-card rows, code lines and other page elements
@@ -499,7 +585,8 @@ export class UI {
         <div class="kv"><span>Peak (all charging)</span><b data-live="psupeak"></b></div>
         <div class="kv"><span>Outputs used</span><b>${e.outputs.length}/${PORTS.psu}</b></div>
         <p class="note" data-live="psunote"></p>
-        <div class="acts"><button data-act="wirefrom">Wire from here</button><button data-act="sell" class="danger">Sell</button></div>`;
+        ${this.upgradeHtml(e)}
+        <div class="acts"><button data-act="wirefrom">Wire from here</button>${this.upgradeBtn(e)}<button data-act="sell" class="danger">Sell</button></div>`;
     } else if (e.type === 'splitter') {
       html = `<div class="ih"><span class="ii">${ICONS.splitter}</span><div><b>Splitter</b><small>1 input → up to 3 outputs</small></div></div>
         <div class="kv"><span>Input</span><b data-live="spin"></b></div>
@@ -512,11 +599,14 @@ export class UI {
       html = `<div class="ih"><span class="ii">${ICONS[t ? t.type : 'socket']}</span><div><b>${head}</b><small>Socket #${e.id} · 12 V · CPU ${e.cpu} lines/tick</small></div></div>
         <div class="meter cap"><i data-live="capbar"></i></div>
         <div class="kv"><span>Capacitor</span><b data-live="cap"></b></div>
+        ${this.upgradeHtml(e)}
+        <div class="kv"><span>Module slots</span><b>${(() => { const u = t ? g.extrasIn(t.code) : []; return `${u.length}/${e.slots}${u.length ? ` (${u.map(x => x.name).join(", ")})` : ""}`; })()}</b></div>
         <div class="kv"><span>Charging</span><b data-live="inw"></b></div>
         ${e.outputs.length ? '<div class="kv"><span>Passing on</span><b data-live="passw"></b></div>' : ''}
         ${t ? `<div class="kv"><span>CPU</span><b data-live="cpu"></b></div><div class="kv"><span>Status</span><b data-live="status"></b></div>` : ''}
         <p class="note" data-live="socknote"></p>
         <div class="acts">
+          ${this.upgradeBtn(e)}
           ${t ? '<button data-act="code" class="primary">Code ✎</button>' : Object.entries(TURRETS).map(([k, d]) => `<button data-act="buy" data-type="${k}" ${g.isUnlocked(k) ? '' : 'disabled'}>${d.name} ${d.cost}</button>`).join('')}
           ${e.input ? '<button data-act="route">Route ↻</button><button data-act="unplug">Unplug</button>' : ''}
           ${e.input && !e.outputs.length ? '<button data-act="wirefrom" title="Pass power on to one more part. Everything after this socket shares its input wire.">Wire from here</button>' : ''}
@@ -530,11 +620,28 @@ export class UI {
       if (act === 'sell') { g.sell(e); if (!g.ents.has(e.id)) this.select(null); else this.renderInfo(); }
       if (act === 'code') this.openEditor(e.id);
       if (act === 'unplug') { g.unplug(e); this.renderInfo(); }
+      if (act === 'upgrade') { g.upgrade(e); this.renderInfo(); }
       if (act === 'route') this.reroute(g.wires.get(e.input));
       if (act === 'wirefrom') { this.setTool('wire'); this.wireFrom = e.id; }
       if (act === 'buy') { const t = g.buildTurret(b.dataset.type, e); this.renderInfo(); this.copyNote(t); }
     };
     this.liveInfo();
+  }
+
+  // upgrade row + button for PSUs and sockets
+  upgradeText(e, lvl) {
+    const U = UPGRADES[e.type]?.[lvl - 1]; if (!U) return '';
+    return e.type === 'psu' ? `${U.maxW} W` : `${U.chargeW} W charging, ${U.cap} J, ${U.slots} module slot${U.slots === 1 ? '' : 's'}`;
+  }
+  upgradeHtml(e) {
+    const U = UPGRADES[e.type]; if (!U) return '';
+    return `<div class="kv"><span>Level</span><b>${'★'.repeat(e.level)}${'☆'.repeat(U.length - e.level)} · ${this.upgradeText(e, e.level)}</b></div>`;
+  }
+  upgradeBtn(e) {
+    const u = this.g.upgradeInfo(e); if (!u) return '';
+    if (u.max) return '<button disabled>Max level ★</button>';
+    if (u.locked) return `<button disabled title="Upgrades unlock at wave ${u.locked}">⬆ Upgrade (wave ${u.locked})</button>`;
+    return `<button data-act="upgrade" ${this.g.credits < u.cost ? 'disabled' : ''} title="Level ${e.level + 1}: ${this.upgradeText(e, e.level + 1)}">⬆ ${this.upgradeText(e, e.level + 1)} · ${u.cost}</button>`;
   }
 
   // tell the player where a new turret's program came from (each turret owns its own copy)
@@ -617,10 +724,12 @@ export class UI {
       const T = this.edTarget();
       if (T) T.t.draft = v;
       this.cm.mark(null);
+      this.refreshGhosts?.();
     });
     $('#ed-close').addEventListener('click', () => this.closeEditor());
     $('#ed-task').addEventListener('click', e => { if (this.edTaskBig && !e.target.closest('.et-tog')) return; this.edTaskBig = !this.edTaskBig; this.updateTip(); setTimeout(() => this.cm.refresh(), 30); });
     $('#ed-upload').addEventListener('click', () => this.upload());
+    $('#ed-hint').addEventListener('click', () => this.hint());
     $('#ed-revert').addEventListener('click', () => {
       const T = this.edTarget(); if (!T) return;
       T.t.draft = null; this.cm.set(T.t.code);
@@ -650,7 +759,7 @@ export class UI {
     const pane = tab === 'console' ? 'code' : tab;
     for (const id of ['code', 'power', 'docs', 'lesson']) $(`#tab-${id}`).hidden = id !== pane;
     $('#tab-code').classList.toggle('console-mode', tab === 'console');
-    if (tab === 'lesson') $('#tab-lesson').innerHTML = `<h3>Lesson ${this.g.lessonIndex() + 1}: ${esc(this.g.lesson().title)}</h3>${$('#lesson-tasks').outerHTML.replace('id="lesson-tasks"', '')}<div class="lesson">${$('#lesson-body').innerHTML}</div>`;
+    if (tab === 'lesson') $('#tab-lesson').innerHTML = `<h3>Lesson ${this.g.lessonLabel()}: ${esc(this.g.lesson().title)}</h3>${$('#lesson-tasks').outerHTML.replace('id="lesson-tasks"', '')}<div class="lesson">${$('#lesson-body').innerHTML}</div>`;
     if (tab === 'code') setTimeout(() => this.cm.refresh(), 0);
     if (tab === 'power') { this.renderPower(); this.g.flags.powerTabViewed = true; }
     if (tab === 'docs') this.renderDocs();
@@ -687,7 +796,7 @@ export class UI {
     const errLine = lib ? t.error?.line : (t.error?.line || t.runtimeError?.line);
     this.cm.mark(errLine);
     this.updateTip();
-    requestAnimationFrame(() => { this.cm.refresh(); if (!errLine) this.cm.gotoTodo(); });
+    requestAnimationFrame(() => { this.cm.refresh(); if (!errLine) this.cm.gotoTodo(); this.refreshGhosts(); });
   }
 
   // drag the editor window by its title bar; it stays inside the board area
@@ -760,12 +869,12 @@ export class UI {
       <p class="muted">Based on your uploaded settings. Change values in <code>setup()</code> and upload to see the effect.</p>
       <table class="ptable">${est.rows.map(r => `<tr><td>${r[0]}</td><td class="num">${fmt(r[1])} ${r[2]}</td><td class="muted">${esc(r[3])}</td></tr>`).join('')}
       <tr class="sum"><td>Worst case (everything at once)</td><td class="num">${fmt(est.peak)} W</td><td></td></tr></table>
-      <div class="kv"><span>Socket charge limit</span><b>${POWER.socketChargeW} W</b></div>
+      <div class="kv"><span>Socket charge limit</span><b>${s.chargeW} W</b></div>
       ${(() => { this.g.updatePeaks(); const wc = this.g.worstCase(s); return wc ? `<div class="kv"><span>Supply in the worst case (all sockets charging)</span><b>${fmt(wc.supply)} W</b></div><div class="kv"><span>Meter's worst-case bar (use ÷ supply)</span><b class="${wc.ratio <= 1.0 ? 'good' : wc.ratio <= 1.5 ? 'warn' : 'bad'}">${isFinite(wc.ratio) ? Math.round(wc.ratio * 100) + '%' : 'no power'}</b></div>` : ''; })()}
       <div class="kv"><span>Charging now</span><b>${fmt(s.inS)} W</b></div>
       <div class="kv"><span>Capacitor</span><b>${fmt(s.energy)} / ${s.cap} J</b></div>
       <div class="kv"><span>Input wire</span><b>${w ? `${fmt(w.aS, 2)} A of ${w.maxA} A` : 'none'}</b></div>
-      ${est.peak > POWER.socketChargeW ? `<p class="note warn">Worst case is above the ${POWER.socketChargeW} W the socket can charge at. The capacitor covers bursts, but firing nonstop will drain it and cause a brownout.</p>` : '<p class="note good">This setup can run nonstop without draining the capacitor (if the PSU and wire can deliver).</p>'}
+      ${est.peak > s.chargeW ? `<p class="note warn">Worst case is above the ${s.chargeW} W the socket can charge at. The capacitor covers bursts, but firing nonstop will drain it and cause a brownout.</p>` : '<p class="note good">This setup can run nonstop without draining the capacitor (if the PSU and wire can deliver).</p>'}
       <h3>The physics</h3>
       <ul class="muted"><li><b>P = V × I</b>: 12 V × 5 A = 60 W per wire.</li><li><b>Energy (J) = Power (W) × time (s)</b>: a ${POWER.socketChargeW} W charger fills 100 J in ${fmt(100 / POWER.socketChargeW)} s.</li><li>A shot is a burst of energy (J); a beam or motor is a steady draw (W).</li></ul>`;
   }
@@ -797,13 +906,13 @@ export class UI {
     const g = this.g;
     const idx = g.lessonIndex(), WAVES = g.map.waves, M = g.map;
     const L = g.map.lessons[idx];
-    $('#lesson-num').textContent = idx + 1;
+    $('#lesson-num').textContent = g.lessonLabel(idx);
     $('#lesson-title').textContent = L.title;
     $('#lesson-body').innerHTML = L.body;
     $('#lesson-tasks').innerHTML = L.tasks.map((t, i) => `<div class="task" data-i="${i}"><span class="tick">✓</span><div><b>Task${L.tasks.length > 1 ? ` ${i + 1}` : ''}</b><div>${t.text}</div></div></div>`).join('');
     $('#lesson-hint').hidden = true; $('#lesson-hint').innerHTML = `💡 ${esc(L.hint)}`;
     $('#lesson-sol').hidden = true; $('#lesson-sol').innerHTML = `<pre>${esc(L.solution)}</pre>`;
-    $('#btn-hint').onclick = () => { $('#lesson-hint').hidden = !$('#lesson-hint').hidden; };
+    $('#btn-hint').onclick = () => { $('#lesson-hint').hidden = !$('#lesson-hint').hidden; if (this.editorFor != null) this.hint(); };
     $('#btn-solution').onclick = () => { $('#lesson-sol').hidden = !$('#lesson-sol').hidden; };
     // next wave preview
     const wi = Math.min(g.wave, WAVES.length - 1);
@@ -826,10 +935,19 @@ export class UI {
       const key = `${idx}:${i}`;
       if (done && !this.lessonDone.has(key)) {
         this.lessonDone.add(key);
-        this.toast(L.tasks.length > 1 ? `Lesson ${idx + 1}, task ${i + 1} complete!` : `Lesson ${idx + 1} task complete!`, 'good');
+        this.toast(L.tasks.length > 1 ? `Lesson ${this.g.lessonLabel(idx)}, task ${i + 1} complete!` : `Lesson ${this.g.lessonLabel(idx)} task complete!`, 'good');
         this.sfx('task');
+        if (L.keeps) this.keepFunction(L.keeps);
       }
     });
+    // all tasks done and a half-lesson (like 3½) belongs to this wave: move on to it right away
+    const next = this.g.lessonIndex();
+    if (next !== idx) {
+      this.toast(`New: Lesson ${this.g.lessonLabel(next)} · ${this.g.map.lessons[next].title}`, 'good');
+      this.renderGuide();
+      this.flashGuide();
+      return;
+    }
     this.updateTip();
   }
 
@@ -878,7 +996,7 @@ export class UI {
       // tap the strip to expand it into the whole lesson (and tap again to make it small)
       const big = !!this.edTaskBig;
       const html = i < 0 && !big ? '' : `<span class="et-tog">${big ? '▴ less' : '▾ more'}</span>`
-        + (i < 0 ? `<b>Lesson ${idx + 1}</b>: all tasks done.` : `<b>Lesson ${idx + 1}${L.tasks.length > 1 ? `, task ${i + 1}` : ''}:</b> ${L.tasks[i].text}`)
+        + (i < 0 ? `<b>Lesson ${this.g.lessonLabel(idx)}</b>: all tasks done.` : `<b>Lesson ${this.g.lessonLabel(idx)}${L.tasks.length > 1 ? `, task ${i + 1}` : ''}:</b> ${L.tasks[i].text}`)
         + (big ? `<div class="et-more lesson">${L.body}</div>` : '');
       if (edTask.dataset.html !== html) { edTask.dataset.html = html; edTask.innerHTML = html; }
       edTask.classList.toggle('big', big);
@@ -1085,6 +1203,9 @@ export class UI {
     if (save && this.g.load(save)) {
       this.lessonDone = new Set(save.lessonDone || []);
       this.toast(`Welcome back! ${this.g.map.name}, wave ${this.g.wave + 1}.`, 'good');
+    } else if (this.g.map.library) {
+      const lib = this.libraryWithMine();   // functions written on earlier maps come along
+      if (lib) { this.g.library.code = lib; this.g.syncLibrary(); this.toast('Your in_range function from map 1 is in your Library (📚).', 'good'); }
     }
     this.renderGuide();
     this.storeSet(this.pk('lastMap'), id);

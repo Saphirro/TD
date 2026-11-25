@@ -33,6 +33,7 @@ export const POWER = {
   laserDpsPerW: 0.8,   // laser damage/s = 0.8 x watts
   pulseBase: 2,        // pulse J = strength x (2 + 0.5 x range^2)
   pulseRangeK: 0.5,
+  pulseSurgeJ: 15,     // a pulse that hits 0-1 enemies drains this from every other socket on its PSU
   brownoutResume: 0.25 // turret restarts at 25% charge
 };
 
@@ -53,6 +54,13 @@ export const BUILDINGS = {
 // power outputs per part. A socket has 1 "power out" so sockets can be chained;
 // everything further down a chain shares the wire feeding it (5 A = 60 W).
 export const PORTS = { psu: 4, splitter: 3, socket: 1 };
+// upgrade levels (level 1 = as built). Costs are paid per step and count toward the sell value.
+export const EXTRA_MODULES = ['power', 'meter', 'lib'];   // need a free module slot on the socket
+export const UPGRADES = {
+  psu: [{ maxW: 100 }, { maxW: 140, cost: 60 }, { maxW: 180, cost: 90 }],
+  // slots = extra modules a turret program may import (power, meter, lib); radar, motor and the weapon are always free
+  socket: [{ chargeW: 30, cap: 100, slots: 1, cpu: 150 }, { chargeW: 40, cap: 130, slots: 2, cpu: 200, cost: 35 }, { chargeW: 50, cap: 160, slots: 3, cpu: 250, cost: 55 }],
+};
 
 export const TURRETS = {
   cannon: {
@@ -104,10 +112,10 @@ export const WAVES = [
   // 10 · memory + prediction: lots of fast worms
   [{ t: 'mite', n: 30, gap: 0.14 }, { t: 'beetle', n: 12, gap: 1.1, delay: 1 }, { t: 'worm', n: 22, gap: 0.35, delay: 1 }, { t: 'bug', n: 20, gap: 0.35, delay: 1 }],
   // 11 · boss
-  [{ t: 'bug', n: 15, gap: 0.48 }, { t: 'rootkit', n: 1, gap: 1, delay: 2 }, { t: 'beetle', n: 12, gap: 1.1, delay: 3 }, { t: 'mite', n: 42, gap: 0.125, delay: 2 }, { t: 'worm', n: 22, gap: 0.32, delay: 1 }],
+  [{ t: 'bug', n: 14, gap: 0.5 }, { t: 'rootkit', n: 1, gap: 1, delay: 2 }, { t: 'beetle', n: 10, gap: 1.2, delay: 3 }, { t: 'mite', n: 40, gap: 0.13, delay: 2 }, { t: 'worm', n: 20, gap: 0.35, delay: 1 }],
 ];
 export const WAVE_HP_GROWTH = 0.14;   // +14% hp per wave (bosses excluded)
-export const WAVE_BONUS = (w) => 30 + 5 * w;   // +5 vs before wires cost credits
+export const WAVE_BONUS = (w) => 23 + 6 * w;   // tighter early than before (was 30 + 5w), grows for the late waves
 
 // ---------------------------------------------------------------------------
 // Program templates
@@ -217,6 +225,7 @@ export const LESSONS = [
         text: 'Open the cannon\'s code: double-click it (on a phone: tap it, then <b>Code</b>). On the empty line under the yellow <code># TODO</code>, type <code>cannon.fire()</code>. Press <b>Upload</b> (or Ctrl+S), then <b>Start wave</b>.',
         check: g => anyCode(g, /cannon\.fire\(/, 'cannon'),
         focus: g => ({ ents: turretSocks(g, 'cannon'), code: /# TODO/, dom: ['#ed-upload'] }),
+        ghost: [{ after: /# TODO \(Lesson 1\)/, text: '    cannon.fire()' }],
       },
     ],
     hint: 'The new line needs 4 spaces in front of it, the same as motor.aim(target). That tells Python it belongs inside update().',
@@ -269,6 +278,10 @@ export const LESSONS = [
         text: 'Make a cannon fire <b>only when</b> <code>motor.aimed(target)</code> is True. Press <b>Upload</b>. Each cannon has its own copy of the code, so do it on every cannon.',
         check: g => anyCode(g, /if\s+motor\.aimed\(\s*target\s*\)\s*:\s*\n\s+cannon\.fire\(/, 'cannon'),
         focus: g => ({ ents: turretSocks(g, 'cannon', t => !/if\s+motor\.aimed\(/.test(t.code)), code: /cannon\.fire\(/, dom: ['#ed-upload'] }),
+        ghost: [
+          { after: /^\s*motor\.aim\(target\)/, text: '    if motor.aimed(target):' },
+          { after: /^\s*if motor\.aimed\(target\)/, text: '        cannon.fire()' },
+        ],
       },
       {
         text: 'Have 3 turrets running. Fast <b>worms</b> are coming this wave.',
@@ -282,18 +295,67 @@ export const LESSONS = [
         cannon.fire()`,
   },
   {
+    title: 'Your own function',
+    half: true,   // lesson 3½: appears in the same wave once lesson 3 is done
+    keeps: 'in_range',   // the function the player writes here is saved and goes into their map 2 Library
+    body: `So far you called functions other people wrote: <code>radar.scan()</code>, <code>cannon.fire()</code>. Now you write one yourself. A function is a small named recipe:
+      <ul><li><code>def</code> starts it, then its <b>name</b>, then the values it needs in brackets, then a colon <code>:</code></li>
+      <li>the lines under it, 4 spaces in, are what it does</li>
+      <li><code>return</code> sends the answer back to whoever called it</li></ul>
+      <p><b>Example</b> (not your answer): a function that tells you if the turret is gaining energy. It uses the meter module (add <code>meter</code> to the import line to try it):</p>
+      <pre>def charging():
+    return meter.net > 0</pre>
+      <p>and using it inside <code>update()</code>:</p>
+      <pre>    if charging():
+        print("gaining energy")</pre>
+      <p><b>Your function:</b> <code>in_range(target, max_dist)</code> answers "is this enemy close enough?". <code>target</code> and <code>max_dist</code> are its two inputs. Every enemy has <code>target.distance</code>: how many tiles away from this turret it is. The answer is <code>True</code> when that is <code>max_dist</code> or less.</p>
+      <p>Why it helps: shells need time to fly, so close enemies are hit much more often. Stuck? <b>Hint</b> shows the next line faintly in the editor. You still type it yourself.</p>
+      <p>Your function also comes with you to the next map, into your own <b>Library</b>.</p>`,
+    tasks: [
+      {
+        text: 'Above <code>def update():</code>, write the function <code>in_range(target, max_dist)</code> that returns whether <code>target.distance</code> is <code>max_dist</code> or less. Upload.',
+        check: g => anyCode(g, /def\s+in_range\s*\(\s*\w+\s*,\s*\w+\s*\)\s*:\s*\n[ \t]+return\b/, 'cannon'),
+        focus: g => ({ ents: turretSocks(g, 'cannon'), code: /^def update/, dom: ['#ed-upload', '#ed-hint'] }),
+        ghost: [
+          { before: /^def update\(/, text: 'def in_range(target, max_dist):' },
+          { after: /^def in_range\(/, text: '    return target.distance <= max_dist' },
+        ],
+      },
+      {
+        text: 'Use it: the cannon fires only when it is aimed <b>and</b> <code>in_range(target, 2.5)</code> is True. Upload.',
+        check: g => anyCode(g, /if\s+[^\n]*in_range\(\s*target\s*,/, 'cannon'),
+        focus: g => ({ ents: turretSocks(g, 'cannon'), code: /cannon\.fire\(/, dom: ['#ed-upload', '#ed-hint'] }),
+        ghost: [
+          { after: /^\s*if motor\.aimed\(target\)/, text: '        if in_range(target, 2.5):' },
+          { after: /^\s*if in_range\(target/, text: '            cannon.fire()' },
+        ],
+      },
+    ],
+    hint: 'First line: def in_range(target, max_dist):   Second line, 4 spaces in: return target.distance <= max_dist   (<= means "less than or equal to").',
+    solution: `def in_range(target, max_dist):
+    return target.distance <= max_dist
+
+def update():
+    ...
+    if motor.aimed(target):
+        if in_range(target, 2.5):
+            cannon.fire()`,
+  },
+  {
     title: 'Energy: joules in and out',
     body: `Everything a turret does uses energy from its socket's capacitor. Energy is counted in <b>joules (J)</b>, and <b>1 watt = 1 joule every second</b>.
       <ul><li><b>In:</b> the socket refills at up to <b>30 W</b> (30 J every second), if its wire and PSU can deliver that.</li>
       <li><b>Out:</b> each shot costs <code>damage × 1.5</code> J. Damage 10 = 15 J per shot. A cannon that fires every 0.7 s uses about 21 J every second, so 21 W.</li>
       <li>The radar uses <code>0.3 × range²</code> W all the time, the motor <code>0.04 × speed</code> W while turning, and every line of code 2 mJ.</li></ul>
       <p>If more joules go out than come in, the capacitor empties and the turret runs low (⚡) or browns out.</p>
-      <p><b>New module: meter.</b> Add <code>meter</code> to the import line and the tower shows a small badge: <b style="color:#3dff9a">▲</b> gaining, <b style="color:#ffc94a">=</b> about even, <b style="color:#ff5b5b">▼</b> using more than it gets, and next to it a <b>worst-case</b> bar: green if the turret could fire nonstop on the power it gets, yellow if close, red if it would drain. The meter itself uses no power.</p>`,
+      <p><b>New module: meter.</b> Add <code>meter</code> to the import line and the tower shows a small badge: <b style="color:#3dff9a">▲</b> gaining, <b style="color:#ffc94a">=</b> about even, <b style="color:#ff5b5b">▼</b> using more than it gets, and next to it a <b>worst-case</b> bar: green if the turret could fire nonstop on the power it gets, yellow if close, red if it would drain. The meter itself uses no power.</p>
+      <p><b>Module slots:</b> radar, motor and the weapon are built in. Extra modules like <code>meter</code>, <code>power</code> and (later) <code>lib</code> each need a <b>slot</b> on the socket. A new socket has 1 slot; upgrading it gives 2, then 3.</p>`,
     tasks: [
       {
         text: 'Add <code>meter</code> to the import line of a cannon and upload. Watch its badge during the wave.',
         check: g => anyCode(g, /^\s*import[^\n#]*\bmeter\b/m),
         focus: g => ({ ents: turretSocks(g, 'cannon'), code: /^import /, dom: ['#ed-upload'] }),
+        ghost: [{ change: /^import /, text: 'import radar, motor, cannon, meter' }],
       },
       {
         text: 'Open a cannon\'s <b>Power</b> tab and see how many watts each part of it uses.',
@@ -315,6 +377,7 @@ export const LESSONS = [
         text: 'Raise <code>cannon.damage</code> to 15 or more on at least one cannon, then upload.',
         check: g => turretsOf(g, 'cannon').some(t => t.compiled && t.cfg.damage >= 15),
         focus: g => ({ ents: turretSocks(g, 'cannon'), code: /cannon\.damage\s*=/, dom: ['#editor .tabs button[data-tab="power"]', '#ed-upload'] }),
+        ghost: [{ change: /^\s*cannon\.damage\s*=/, text: '    cannon.damage = 20' }],
       },
     ],
     hint: 'Too much damage drains the socket faster than it refills, and a yellow ⚡ appears on the turret. Somewhere around 18–25 works well.',
@@ -324,18 +387,19 @@ export const LESSONS = [
     cannon.damage = 20`,
   },
   {
-    title: 'More power: a second PSU',
+    title: 'More power: PSUs and upgrades',
     body: `Stronger shots use more energy, and your <b>PSU</b> only has <b>100 W</b>. Look at its frame on the board:
       <ul><li><b>green</b>: fine</li>
       <li><b>yellow</b>: its sockets could use 75–100% of its power</li>
       <li><b>red</b>: if all its sockets charge at once they need more than 100 W. Then it is <b>overloaded</b>: everyone gets a smaller share, capacitors drain and turrets run low (⚡).</li></ul>
       <p>Each socket can pull up to 30 W while it charges, so one PSU comfortably runs about <b>3 turrets</b>.</p>
       <p><b>The fix:</b> build another PSU (80 credits), close to your towers so the wires are short. Then move a socket over to it: tap the socket, press <b>Unplug</b>, pick <b>Wire</b> and connect it from the new PSU. New towers can go straight onto the new PSU.</p>
-      <p>Tap a PSU to see its <b>Peak</b>: what it would need if everything charged at the same time.</p>`,
+      <p>Tap a PSU to see its <b>Peak</b>: what it would need if everything charged at the same time.</p>
+      <p><b>New: upgrades.</b> Instead of a second PSU you can upgrade one: <b>⬆ Upgrade</b> on a PSU raises it to 140 W, then 180 W. Sockets can be upgraded too: they charge faster (40, then 50 W) and store more energy. Upgrades are cheaper than new parts but limited, so choose where they matter.</p>`,
     tasks: [
       {
-        text: 'Build a second <b>PSU</b> and connect at least one socket to it with a <b>Wire</b>.',
-        check: g => g.psus().filter(p => p.outputs.length).length >= 2,
+        text: 'Get more power: build a second <b>PSU</b> and connect a socket to it, <b>or</b> upgrade your PSU (tap it, then <b>⬆ Upgrade</b>).',
+        check: g => g.psus().filter(p => p.outputs.length).length >= 2 || g.psus().some(p => p.level >= 2),
         focus: g => {
           const spare = g.psus().find(p => !p.outputs.length);
           if (!spare) return g.psus().length < 2 ? { tools: ['psu'], ents: [] } : { tools: ['psu'] };
@@ -343,7 +407,7 @@ export const LESSONS = [
         },
       },
       {
-        text: 'Get every PSU out of the red: no PSU should need more than 100 W at peak (tap it and check <b>Peak</b>).',
+        text: 'Get every PSU out of the red: no PSU should need more than it can give at peak (tap it and check <b>Peak</b>).',
         check: g => { g.updatePeaks(); return g.psus().length >= 2 && g.psus().every(p => (p.peakW || 0) <= p.maxW + 0.01); },
         focus: g => { g.updatePeaks(); return { ents: g.psus().filter(p => (p.peakW || 0) > p.maxW).map(p => p.id), info: ['psupeak'] }; },
       },
@@ -353,7 +417,7 @@ export const LESSONS = [
   },
   {
     title: 'Lists and for loops',
-    body: `Swarms of tiny <b>mites</b> are coming. <b>New: Pulse turret!</b> Its shockwave hits <i>every</i> enemy in range at once, but each pulse is expensive, so only fire it when it hits several.
+    body: `Swarms of tiny <b>mites</b> are coming. <b>New: Pulse turret!</b> Its shockwave hits <i>every</i> enemy in range at once, but each pulse is expensive, so only fire it when it hits several. <b>Careful:</b> a pulse that hits only one enemy (or none) sends a <b>power surge</b> back through the wires and drains 15 J from every other socket on the same PSU.
       <p><code>radar.scan()</code> gives you a <b>list</b> of enemies. A <b>for loop</b> runs the indented lines once for every item in a list.</p>
       <p><b>Example</b> (not your answer):</p>
       <pre>for e in enemies:
@@ -405,7 +469,8 @@ export const LESSONS = [
     title: 'Laser and saving energy',
     body: `<b>New: Laser turret!</b> The beam <b>ignores armor</b>. While it is on it uses <code>laser.power</code> watts every second, and does <code>power × 0.8</code> damage per second.
       <p>Call <code>laser.fire(target)</code> every tick to keep the beam on. It only does damage when the turret is aimed at the target. Otherwise you are burning energy into thin air.</p>
-      <p><b>Saving energy:</b> big waves empty your sockets. Add <code>power</code> to the import line and your code can read <code>power.percent</code> (0–100) and <code>power.energy</code> (joules), for example to stop shooting small bugs when energy is low. Even your code costs energy: every line that runs uses 2 mJ.</p>`,
+      <p><b>Saving energy:</b> big waves empty your sockets. Add <code>power</code> to the import line and your code can read <code>power.percent</code> (0–100) and <code>power.energy</code> (joules), for example to stop shooting small bugs when energy is low. Even your code costs energy: every line that runs uses 2 mJ.</p>
+      <p><code>power</code> needs a module slot. If the socket already uses its slot for <code>meter</code>, upgrade the socket (⬆, 2 slots) or take <code>meter</code> out of the import line.</p>`,
     tasks: [
       {
         text: 'Build a <b>Laser</b> turret.',
@@ -489,7 +554,7 @@ export const DOCS = {
 <tr><td><code>cannon.shot_cost()</code></td><td>Energy per shot in J.</td></tr>
 </table>`,
   pulse: `<h3>pulse</h3>
-<p><b>Setting</b> <code>pulse.strength</code> 1–40 (default 8). Hits every enemy within <code>radar.range</code>. Cost per pulse <code>strength × (2 + 0.5 × range²)</code> J. Reload 1.4 s. Armor reduces damage.</p>
+<p><b>Setting</b> <code>pulse.strength</code> 1–40 (default 8). Hits every enemy within <code>radar.range</code>. Cost per pulse <code>strength × (2 + 0.5 × range²)</code> J. Reload 1.4 s. Armor reduces damage. A pulse that hits <b>one or no</b> enemy causes a <b>surge</b>: every other socket on the same PSU loses 15 J.</p>
 <table>
 <tr><td><code>pulse.fire()</code></td><td>Release a pulse if ready. Returns True if fired.</td></tr>
 <tr><td><code>pulse.ready()</code></td><td>True if reloaded and enough energy.</td></tr>
@@ -545,7 +610,7 @@ const GPU_LESSONS = [
   {
     title: 'Writing your own function',
     body: `Welcome to the <b>graphics card</b>. Bugs now come from <b>two lanes</b> that meet in the middle, and every turret type is already unlocked.
-      <p>So far you used functions other people wrote. Now write your own! <code>def</code> creates a function, and <code>return</code> sends a result back:</p>
+      <p>On the motherboard you wrote <code>in_range</code>. It is already in your <b>📚 Library</b> (it shows up there if you finished lesson 3½). Now write another one: <code>def</code> creates a function, and <code>return</code> sends a result back:</p>
 <pre>def double(n):
     return n * 2
 
@@ -671,7 +736,7 @@ export const MAPS = [
     desc: 'Learn the basics: functions, if, loops, power and targeting.',
     paths: [PATH], core: CORE, start: START, waves: WAVES, lessons: LESSONS,
     hpBase: 1, hpGrowth: WAVE_HP_GROWTH, bonus: WAVE_BONUS,
-    unlock: { cannon: 1, pulse: 7, laser: 9 }, library: false, starter: MOTHERBOARD_STARTER,
+    unlock: { cannon: 1, pulse: 7, laser: 9, upgrades: 6 }, library: false, starter: MOTHERBOARD_STARTER,
   },
   {
     id: 'gpu', name: 'Graphics card', num: 2,
@@ -694,7 +759,7 @@ export const MAPS = [
     ],
     lessons: GPU_LESSONS,
     hpBase: 1.0, hpGrowth: 0.10, bonus: w => 35 + 8 * w,
-    unlock: { cannon: 1, pulse: 1, laser: 1 }, library: true,
+    unlock: { cannon: 1, pulse: 1, laser: 1, upgrades: 1 }, library: true,
     starter: g => { g.addEntity('psu', 1, 5); },
   },
 ];

@@ -206,6 +206,9 @@ export class Renderer {
       if (e.type === 'psu') this.drawPsu(e);
       else if (e.type === 'splitter') this.drawSplitter(e);
       else this.drawSocket(e);
+      if (e.level > 1) {   // upgrade level: small gold stars along the top edge
+        for (let i = 1; i < e.level; i++) { this.ctx.beginPath(); this.ctx.arc(e.x - 0.33 + (i - 1) * 0.16, e.y - 0.42, 0.055, 0, TAU); this.ctx.fillStyle = "#ffcf6a"; this.ctx.fill(); }
+      }
     }
     this.drawOverlayUnder();
     for (const s of g.sockets()) if (s.turret) this.drawTurret(s, s.turret);

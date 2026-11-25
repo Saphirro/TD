@@ -85,6 +85,17 @@ export async function run(opts = {}) {
       g.buildTurret(type, s);
       g.compileTurret(s, code[type] || TEMPLATES[type]);
     }
+    // smart spending: money left over this wave goes into upgrades (overloaded PSUs first, then turret sockets)
+    if (opts.upgrades) {
+      for (let k = 0; k < 12; k++) {
+        const left = budget - (start - g.credits);
+        g.updatePeaks();
+        const cands = g.psus().filter(p => p.peakW > p.maxW);   // only fix overloaded PSUs (cheaper than a new one)
+        const c = cands.map(e => ({ e, u: g.upgradeInfo(e) })).filter(x => x.u && !x.u.max && !x.u.locked && x.u.cost <= left).sort((a, b) => a.u.cost - b.u.cost)[0];
+        if (!c) break;
+        g.upgrade(c.e);
+      }
+    }
     if (opts.codeAt) {
       for (const s of sockets()) {
         if (!s.turret) continue;
