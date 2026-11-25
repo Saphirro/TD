@@ -457,7 +457,8 @@ body.phone #coach .more { font-size: 0; }
 body.phone #coach .more::after { content: '›'; font-size: 20px; line-height: 1; }
 body.phone #coach .cl { font-size: 11px; }
 /* hint lines: the next line of the answer, faint, in place (the player types it) */
-.cm-ghost { display: flex; align-items: baseline; gap: 12px; padding: 1px 0 1px 4px; background: #ffcf6a0d; border-left: 2px dashed #ffcf6a88; pointer-events: none; }
+.cm-ghost { display: flex; align-items: baseline; gap: 12px; padding: 1px 0 1px 4px; background: #ffcf6a0d; border-left: 2px dashed #ffcf6a88; cursor: text; }
+.cm-ghost:hover { background: #ffcf6a1a; }
 .cm-ghost pre { margin: 0 !important; padding: 0 !important; border: 0 !important; background: none !important; color: #ffcf6a99 !important; font: 13.5px/1.55 var(--mono) !important; white-space: pre; }
 .cm-ghost .gl { flex: none; font-size: 10px; font-weight: 800; color: #ffcf6aaa; text-transform: uppercase; letter-spacing: .06em; }
 .cm-ghost.change .gl { color: #5ee1ffaa; }

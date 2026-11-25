@@ -130,8 +130,28 @@ function makeEditor(host, onChange) {
         cm._ghostW = list.map(gh => {
           const el = document.createElement('div');
           el.className = `cm-ghost${gh.change ? ' change' : ''}`;
-          el.innerHTML = `<pre></pre><span class="gl">${gh.change ? '← change the line above to this' : '← type this line'}</span>`;
+          el.innerHTML = `<pre></pre><span class="gl">${gh.change ? '← change the line above to this' : '← <span class="pc">click</span><span class="tap">tap</span> here, then type this line'}</span>`;
           el.querySelector('pre').textContent = gh.text;
+          // a hint line is only a picture (CodeMirror ignores clicks on it), so clicking it makes a real,
+          // indented line at that spot (or reuses an empty one there) and puts the cursor on it
+          const pick = e => {
+            e.preventDefault(); e.stopPropagation();
+            const indent = gh.text.match(/^\s*/)[0], blank = i => i >= 0 && i < cm.lineCount() && !cm.getLine(i).trim();
+            let at;
+            if (gh.change) at = gh.line;
+            else if (gh.above) {
+              if (blank(gh.line - 1)) at = gh.line - 1;
+              else { cm.replaceRange(indent + '\n', { line: gh.line, ch: 0 }); at = gh.line; }
+            } else if (blank(gh.line + 1)) at = gh.line + 1;
+            else { cm.replaceRange('\n', { line: gh.line, ch: cm.getLine(gh.line).length }); at = gh.line + 1; }
+            if (!gh.change && cm.getLine(at).length < indent.length) cm.replaceRange(indent, { line: at, ch: 0 }, { line: at, ch: cm.getLine(at).length });
+            cm.setCursor({ line: at, ch: cm.getLine(at).length });
+            if (!cm.getOption('readOnly')) cm.focus();   // phone: the keyboard stays closed until asked for; code chips insert here
+          };
+          let t0 = null;
+          el.addEventListener('mousedown', pick);
+          el.addEventListener('touchstart', e => { t0 = e.touches[0]; }, { passive: true });
+          el.addEventListener('touchend', e => { const t = e.changedTouches[0]; if (t0 && Math.hypot(t.clientX - t0.clientX, t.clientY - t0.clientY) < 10) pick(e); t0 = null; });   // a tap, not a scroll
           return cm.addLineWidget(gh.line, el, { above: !!gh.above });
         });
       },
